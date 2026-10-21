@@ -1,53 +1,43 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUserId } from "@/lib/auth/current-user";
+import { ZodError } from "zod";
+import type { WishlistStatus } from "@prisma/client";
 import {
-  createWishlistItem,
-  deleteWishlistItem,
-  updateWishlistItem,
-} from "@/lib/repositories/wishlist";
-import type { WishlistCategory, WishlistStatus } from "@prisma/client";
+  createWishlistItemForCurrentUser,
+  deleteWishlistItemForCurrentUser,
+  updateWishlistItemForCurrentUser,
+} from "@/lib/services/wishlist";
+
+function eurosToCents(raw: string): number | null {
+  return raw ? Math.round(Number(raw) * 100) : null;
+}
 
 export async function createWishlistAction(
   _prev: { ok: boolean; error?: string } | null,
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const userId = await getCurrentUserId();
-    const title = String(formData.get("title") ?? "").trim();
-    if (!title) return { ok: false, error: "titleRequired" };
-
-    const category = String(formData.get("category") ?? "OTHER") as WishlistCategory;
-    const status = String(formData.get("status") ?? "IDEA") as WishlistStatus;
-    const costRaw = String(formData.get("estimatedCostEuros") ?? "");
-    const budgetRaw = String(formData.get("plannedBudgetEuros") ?? "");
-
-    await createWishlistItem(userId, {
-      title,
+    await createWishlistItemForCurrentUser({
+      title: String(formData.get("title") ?? ""),
       description: String(formData.get("description") ?? "") || null,
-      category,
-      status,
+      category: String(formData.get("category") ?? "OTHER"),
+      status: String(formData.get("status") ?? "IDEA"),
       url: String(formData.get("url") ?? "") || null,
       plannedMake: String(formData.get("plannedMake") ?? "") || null,
       plannedModel: String(formData.get("plannedModel") ?? "") || null,
-      plannedYear: formData.get("plannedYear")
-        ? Number(formData.get("plannedYear"))
-        : null,
-      estimatedCostCents: costRaw
-        ? BigInt(Math.round(Number(costRaw) * 100))
-        : null,
-      plannedBudgetCents: budgetRaw
-        ? BigInt(Math.round(Number(budgetRaw) * 100))
-        : null,
-      targetDate: formData.get("targetDate")
-        ? new Date(String(formData.get("targetDate")))
-        : null,
+      plannedYear: formData.get("plannedYear") ? Number(formData.get("plannedYear")) : null,
+      estimatedCostCents: eurosToCents(String(formData.get("estimatedCostEuros") ?? "")),
+      plannedBudgetCents: eurosToCents(String(formData.get("plannedBudgetEuros") ?? "")),
+      targetDate: formData.get("targetDate") ? String(formData.get("targetDate")) : null,
     });
 
     revalidatePath("/wishlist");
     return { ok: true };
-  } catch {
+  } catch (error) {
+    if (error instanceof ZodError && error.issues[0]?.message === "titleRequired") {
+      return { ok: false, error: "titleRequired" };
+    }
     return { ok: false, error: "unknown" };
   }
 }
@@ -56,15 +46,13 @@ export async function updateWishlistStatusAction(
   id: string,
   status: WishlistStatus,
 ): Promise<{ ok: boolean }> {
-  const userId = await getCurrentUserId();
-  await updateWishlistItem(id, userId, { status });
+  await updateWishlistItemForCurrentUser(id, { status });
   revalidatePath("/wishlist");
   return { ok: true };
 }
 
 export async function deleteWishlistAction(id: string): Promise<{ ok: boolean }> {
-  const userId = await getCurrentUserId();
-  await deleteWishlistItem(id, userId);
+  await deleteWishlistItemForCurrentUser(id);
   revalidatePath("/wishlist");
   return { ok: true };
 }

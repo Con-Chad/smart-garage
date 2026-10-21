@@ -1,12 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUserId } from "@/lib/auth/current-user";
+import { ZodError } from "zod";
 import {
-  deleteInspection,
-  upsertInspection,
-  type InspectionInput,
-} from "@/lib/repositories/inspections";
+  deleteInspectionForCurrentUser,
+  saveInspectionForCurrentUser,
+} from "@/lib/services/inspections";
+
+/** Error codes the inspection form has messages for. */
+const FORM_ERRORS = new Set(["invalidType", "invalidDate"]);
 
 export async function saveInspectionAction(
   vehicleId: string,
@@ -14,42 +16,30 @@ export async function saveInspectionAction(
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const userId = await getCurrentUserId();
-    const type = String(formData.get("type"));
-    if (type !== "HU" && type !== "AU") return { ok: false, error: "invalidType" };
-
-    const nextDueRaw = String(formData.get("nextDueAt"));
-    const nextDueAt = new Date(nextDueRaw);
-    if (Number.isNaN(nextDueAt.getTime())) return { ok: false, error: "invalidDate" };
-
     const lastRaw = String(formData.get("lastPerformedAt") ?? "");
-    const lastPerformedAt = lastRaw ? new Date(lastRaw) : null;
-
-    const data: InspectionInput = {
-      type,
-      nextDueAt,
-      lastPerformedAt,
+    const result = await saveInspectionForCurrentUser(vehicleId, {
+      type: String(formData.get("type")),
+      nextDueAt: String(formData.get("nextDueAt") ?? ""),
+      lastPerformedAt: lastRaw || null,
       reminderWeeksBefore: Number(formData.get("reminderWeeksBefore") ?? 4),
       stickerNumber: String(formData.get("stickerNumber") ?? "") || null,
       notes: String(formData.get("notes") ?? "") || null,
-    };
-
-    const result = await upsertInspection(vehicleId, userId, data);
+    });
     if (!result) return { ok: false, error: "notAllowed" };
 
     revalidatePath(`/vehicles/${vehicleId}`);
     revalidatePath("/reminders");
     return { ok: true };
-  } catch {
-    return { ok: false, error: "unknown" };
+  } catch (error) {
+    const code = error instanceof ZodError ? error.issues[0]?.message : undefined;
+    return { ok: false, error: code && FORM_ERRORS.has(code) ? code : "unknown" };
   }
 }
 
 export async function deleteInspectionFormAction(formData: FormData) {
   const inspectionId = String(formData.get("inspectionId") ?? "");
   const vehicleId = String(formData.get("vehicleId") ?? "");
-  const userId = await getCurrentUserId();
-  await deleteInspection(inspectionId, userId);
+  await deleteInspectionForCurrentUser(inspectionId);
   revalidatePath(`/vehicles/${vehicleId}`);
   revalidatePath("/reminders");
 }

@@ -1,26 +1,33 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUserId } from "@/lib/auth/current-user";
-import {
-  addVehicleShare,
-  removeVehicleShare,
-  updateVehicleShareRole,
-} from "@/lib/repositories/vehicle-shares";
+import { ZodError } from "zod";
 import type { VehicleShareRole } from "@prisma/client";
+import {
+  removeShareForCurrentUser,
+  shareVehicleForCurrentUser,
+  updateShareRoleForCurrentUser,
+} from "@/lib/services/sharing";
 
 export async function shareVehicleAction(
   vehicleId: string,
   _prev: { ok: boolean; error?: string } | null,
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
-  const ownerUserId = await getCurrentUserId();
-  const username = String(formData.get("username") ?? "").trim();
-  const role = String(formData.get("role") ?? "VIEWER") as VehicleShareRole;
-
-  const result = await addVehicleShare(vehicleId, ownerUserId, username, role);
-  if ("error" in result && result.error) {
-    return { ok: false, error: result.error };
+  try {
+    const result = await shareVehicleForCurrentUser(vehicleId, {
+      username: String(formData.get("username") ?? ""),
+      role: String(formData.get("role") ?? "VIEWER"),
+    });
+    if ("error" in result && result.error) {
+      return { ok: false, error: result.error };
+    }
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const code = error.issues[0]?.message;
+      return { ok: false, error: code === "userNotFound" ? code : "unknown" };
+    }
+    throw error;
   }
 
   revalidatePath(`/vehicles/${vehicleId}`);
@@ -30,8 +37,7 @@ export async function shareVehicleAction(
 export async function removeShareFormAction(formData: FormData) {
   const shareId = String(formData.get("shareId") ?? "");
   const vehicleId = String(formData.get("vehicleId") ?? "");
-  const ownerUserId = await getCurrentUserId();
-  await removeVehicleShare(shareId, ownerUserId);
+  await removeShareForCurrentUser(shareId);
   revalidatePath(`/vehicles/${vehicleId}`);
 }
 
@@ -40,8 +46,7 @@ export async function updateShareRoleAction(
   vehicleId: string,
   role: VehicleShareRole,
 ): Promise<{ ok: boolean }> {
-  const ownerUserId = await getCurrentUserId();
-  await updateVehicleShareRole(shareId, ownerUserId, role);
+  const ok = await updateShareRoleForCurrentUser(shareId, role);
   revalidatePath(`/vehicles/${vehicleId}`);
-  return { ok: true };
+  return { ok };
 }

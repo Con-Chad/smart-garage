@@ -1,34 +1,44 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ModificationCategory } from "@prisma/client";
-import { getCurrentUserId } from "@/lib/auth/current-user";
 import {
-  createModification,
-  deleteModification,
-  updateModification,
-} from "@/lib/repositories/modifications";
-import { findEditableVehicle } from "@/lib/repositories/vehicles";
-import { z } from "zod";
+  createModificationForCurrentUser,
+  deleteModificationForCurrentUser,
+  updateModificationForCurrentUser,
+} from "@/lib/services/modifications";
 import { optionalEuroAmountSchema } from "@/lib/validations/money";
-
-const modificationSchema = z.object({
-  category: z.nativeEnum(ModificationCategory),
-  name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(500).optional().nullable(),
-  installedAt: z.string().optional().nullable(),
-  costCents: optionalEuroAmountSchema,
-  currency: z.string().length(3).optional().nullable(),
-  addedPowerKw: z.coerce.number().int().optional().nullable(),
-  addedPowerPs: z.coerce.number().int().optional().nullable(),
-  addedTorqueNm: z.coerce.number().int().optional().nullable(),
-  notes: z.string().trim().max(2000).optional().nullable(),
-  isCustom: z.coerce.boolean().optional(),
-});
 
 export type ModificationActionResult =
   | { success: true }
   | { success: false; error: string };
+
+function optionalNumber(value: FormDataEntryValue | null): number | null {
+  return value ? Number(value) : null;
+}
+
+/** Form fields (cost in euros) → the canonical input the service validates. */
+function modificationInput(formData: FormData) {
+  const costCents = optionalEuroAmountSchema.parse(formData.get("costEuros") || null);
+  return {
+    category: formData.get("category"),
+    name: formData.get("name"),
+    description: formData.get("description") || null,
+    installedAt: formData.get("installedAt") || null,
+    // The euro parser yields null for a malformed amount; reject that like before.
+    costCents: costCents === null ? Number.NaN : (costCents ?? null),
+    currency: formData.get("currency") || null,
+    addedPowerKw: optionalNumber(formData.get("addedPowerKw")),
+    addedPowerPs: optionalNumber(formData.get("addedPowerPs")),
+    addedTorqueNm: optionalNumber(formData.get("addedTorqueNm")),
+    notes: formData.get("notes") || null,
+    isCustom: formData.get("isCustom") === "true",
+  };
+}
+
+function revalidateVehicle(vehicleId: string) {
+  revalidatePath(`/vehicles/${vehicleId}`);
+  revalidatePath(`/vehicles/${vehicleId}/edit`);
+}
 
 export async function createModificationAction(
   vehicleId: string,
@@ -36,42 +46,9 @@ export async function createModificationAction(
   formData: FormData,
 ): Promise<ModificationActionResult> {
   try {
-    const ownerUserId = await getCurrentUserId();
-    const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
-    if (!vehicle) return { success: false, error: "notFound" };
-
-    const parsed = modificationSchema.parse({
-      category: formData.get("category"),
-      name: formData.get("name"),
-      description: formData.get("description") || null,
-      installedAt: formData.get("installedAt") || null,
-      costCents: formData.get("costEuros") || null,
-      currency: formData.get("currency") || null,
-      addedPowerKw: formData.get("addedPowerKw") || null,
-      addedPowerPs: formData.get("addedPowerPs") || null,
-      addedTorqueNm: formData.get("addedTorqueNm") || null,
-      notes: formData.get("notes") || null,
-      isCustom: formData.get("isCustom") === "true",
-    });
-
-    await createModification({
-      vehicleId,
-      category: parsed.category,
-      name: parsed.name,
-      description: parsed.description,
-      installedAt: parsed.installedAt ? new Date(parsed.installedAt) : null,
-      costCents:
-        parsed.costCents != null ? BigInt(parsed.costCents) : null,
-      currency: parsed.currency,
-      addedPowerKw: parsed.addedPowerKw,
-      addedPowerPs: parsed.addedPowerPs,
-      addedTorqueNm: parsed.addedTorqueNm,
-      notes: parsed.notes,
-      isCustom: parsed.isCustom ?? false,
-    });
-
-    revalidatePath(`/vehicles/${vehicleId}`);
-    revalidatePath(`/vehicles/${vehicleId}/edit`);
+    const created = await createModificationForCurrentUser(vehicleId, modificationInput(formData));
+    if (!created) return { success: false, error: "notFound" };
+    revalidateVehicle(vehicleId);
     return { success: true };
   } catch {
     return { success: false, error: "validationFailed" };
@@ -85,42 +62,13 @@ export async function updateModificationAction(
   formData: FormData,
 ): Promise<ModificationActionResult> {
   try {
-    const ownerUserId = await getCurrentUserId();
-    const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
-    if (!vehicle) return { success: false, error: "notFound" };
-
-    const parsed = modificationSchema.parse({
-      category: formData.get("category"),
-      name: formData.get("name"),
-      description: formData.get("description") || null,
-      installedAt: formData.get("installedAt") || null,
-      costCents: formData.get("costEuros") || null,
-      currency: formData.get("currency") || null,
-      addedPowerKw: formData.get("addedPowerKw") || null,
-      addedPowerPs: formData.get("addedPowerPs") || null,
-      addedTorqueNm: formData.get("addedTorqueNm") || null,
-      notes: formData.get("notes") || null,
-      isCustom: formData.get("isCustom") === "true",
-    });
-
-    const result = await updateModification(modificationId, vehicleId, {
-      category: parsed.category,
-      name: parsed.name,
-      description: parsed.description,
-      installedAt: parsed.installedAt ? new Date(parsed.installedAt) : null,
-      costCents: parsed.costCents != null ? BigInt(parsed.costCents) : null,
-      currency: parsed.currency,
-      addedPowerKw: parsed.addedPowerKw,
-      addedPowerPs: parsed.addedPowerPs,
-      addedTorqueNm: parsed.addedTorqueNm,
-      notes: parsed.notes,
-      isCustom: parsed.isCustom ?? false,
-    });
-
-    if (result.count === 0) return { success: false, error: "notFound" };
-
-    revalidatePath(`/vehicles/${vehicleId}`);
-    revalidatePath(`/vehicles/${vehicleId}/edit`);
+    const updated = await updateModificationForCurrentUser(
+      vehicleId,
+      modificationId,
+      modificationInput(formData),
+    );
+    if (!updated) return { success: false, error: "notFound" };
+    revalidateVehicle(vehicleId);
     return { success: true };
   } catch {
     return { success: false, error: "validationFailed" };
@@ -131,12 +79,8 @@ export async function deleteModificationAction(
   vehicleId: string,
   modificationId: string,
 ): Promise<ModificationActionResult> {
-  const ownerUserId = await getCurrentUserId();
-  const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
-  if (!vehicle) return { success: false, error: "notFound" };
-
-  await deleteModification(modificationId, vehicleId);
-  revalidatePath(`/vehicles/${vehicleId}`);
-  revalidatePath(`/vehicles/${vehicleId}/edit`);
+  const deleted = await deleteModificationForCurrentUser(vehicleId, modificationId);
+  if (!deleted) return { success: false, error: "notFound" };
+  revalidateVehicle(vehicleId);
   return { success: true };
 }

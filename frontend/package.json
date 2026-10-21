@@ -10,6 +10,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "node scripts/test-watch-safe.mjs",
     "verify:catalog": "node scripts/verify-catalog-years.mjs",
     "verify:catalog:db": "node scripts/smoke-catalog-import.mjs",

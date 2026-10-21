@@ -49,6 +49,9 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Integration tests
+        run: npm run test:integration
+
       - name: Build
         run: npm run build
         env:

@@ -80,3 +80,38 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   "this device" (logout, and later push registration) require a device
   token.
 
+
+## Read API (CP3)
+
+- **D-027: Flat collections.** Every entity is a top-level collection
+  (`/fuel`, `/records`, `/schedules`, ...) with `?vehicleId=` filters, plus
+  `/{collection}/{id}`, instead of the nested paths sketched in Phase 0.
+  One resource registry (`lib/api/v1/resources.ts`) defines visibility, wire
+  shape and ordering for lists, detail and `/sync`, so the three can't
+  disagree about who sees what.
+  *Why:* the app reads almost everything through `/sync`; flat lists are
+  simpler to keep consistent and to test exhaustively.
+- **D-028: Sync protocol.** `GET /sync?since=` pages through every entity
+  by `(updatedAt, id)` up to a snapshot `serverTime`, then returns
+  `deletions` on the last page. The client stores `nextSince`. The server
+  re-reads 5 s before `since` to cover writes that commit as a sync starts.
+  Rows of a vehicle shared after `since` are sent even if old. Deletions come
+  from tombstones, soft-deleted vehicles/documents and deactivated schedules.
+  `fullResync: true` (first sync, `since` older than 90 days, or a backup
+  import) tells the client to replace its local copy. Clients apply
+  `changes`, then `deletions`, and cascade deletes locally like the
+  database does.
+- **D-029: Server-built views only where logic is non-trivial.**
+  `/reminders` (due status, setup queue, inspections, insurance) and
+  `/expenses/summary` are computed by the server. The dashboard and history
+  timeline are composed by the app from synced data, which it needs offline
+  anyway.
+- **D-030: 404 hides, 403 explains.** Rows a user can't see are always 404,
+  identical to "doesn't exist". 403 is used only when the user can see the
+  vehicle but lacks the role: a viewer writing, or a non-owner managing shares.
+- **D-031: Due-status refresh skips no-op writes.** Pages refresh every
+  schedule on load; writing unchanged values would bump `updatedAt` and make
+  every sync resend every schedule.
+- **D-032: Credentials stay server-side.** `/notification-settings` reports
+  `pushoverConfigured`/`telegramConfigured` instead of the tokens, and
+  documents never expose `storageKey`.

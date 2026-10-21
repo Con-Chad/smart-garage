@@ -262,6 +262,28 @@ model ApiDevice {
   @@index([userId])
 }
 
+/// A deleted row, so offline clients can drop it on their next
+/// `/api/v1/sync`. Written by SQLite triggers (see the `sync_tombstones`
+/// migration) on every delete path, including FK cascades. `vehicleId` or
+/// `userId` decides who may see it; there are no foreign keys because the
+/// referenced rows are usually gone. Pruned after the sync retention window.
+///
+/// Special entities: `vehicleAccess` (a share was removed: `userId` lost
+/// `entityId`) and `*` (a backup import replaced `userId`'s data, so their
+/// clients must resync from scratch).
+model SyncTombstone {
+  id        String   @id @default(cuid())
+  entity    String
+  entityId  String
+  vehicleId String?
+  userId    String?
+  deletedAt DateTime @default(now())
+
+  @@index([deletedAt])
+  @@index([vehicleId])
+  @@index([userId])
+}
+
 model UserPreferences {
   userId                 String   @id
   theme                  String   @default("system")

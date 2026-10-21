@@ -734,6 +734,13 @@ export async function importUserBackup(userId: string, backup: unknown) {
         },
       });
     }
+
+    // Restored rows keep their original timestamps, which an incremental sync
+    // would never pick up. Tell this user's API clients (and those of anyone
+    // the vehicles are shared with) to resync from scratch.
+    await tx.syncTombstone.create({
+      data: { entity: "*", entityId: userId, userId },
+    });
   });
 
   await Promise.all(oldDocuments.map((doc) => deleteStoredFile(doc.storageKey)));

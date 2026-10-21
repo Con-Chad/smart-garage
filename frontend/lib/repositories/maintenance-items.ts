@@ -137,12 +137,24 @@ export async function replaceRecordItems(
   await createRecordItems(tx, recordId, items);
 }
 
+/**
+ * Defaults travel embedded in their schedule for API sync, so changing them
+ * also bumps the schedule's `updatedAt`.
+ */
+function touchSchedule(scheduleId: string) {
+  return prisma.vehicleMaintenanceSchedule.update({
+    where: { id: scheduleId },
+    data: { updatedAt: new Date() },
+  });
+}
+
 export async function replaceScheduleDefaults(
   scheduleId: string,
   items: MaintenanceItemInput[],
 ) {
   await prisma.$transaction([
     prisma.maintenanceItemDefault.deleteMany({ where: { scheduleId } }),
+    touchSchedule(scheduleId),
     ...(items.length > 0
       ? [
           prisma.maintenanceItemDefault.createMany({
@@ -157,7 +169,10 @@ export async function replaceScheduleDefaults(
 }
 
 export async function clearScheduleDefaults(scheduleId: string) {
-  await prisma.maintenanceItemDefault.deleteMany({ where: { scheduleId } });
+  await prisma.$transaction([
+    prisma.maintenanceItemDefault.deleteMany({ where: { scheduleId } }),
+    touchSchedule(scheduleId),
+  ]);
 }
 
 /** Convert stored defaults into the shape the item editor / Zod schema expects. */

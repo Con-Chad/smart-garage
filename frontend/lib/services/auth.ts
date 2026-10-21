@@ -8,6 +8,10 @@ import {
   setSessionCookie,
 } from "@/lib/auth/session";
 import { countUsers } from "@/lib/auth/current-user";
+import {
+  newUserNotificationSettingsData,
+  newUserPreferencesData,
+} from "@/lib/settings/instance-defaults";
 
 const USERNAME_RE = /^[a-zA-Z0-9_-]{3,32}$/;
 
@@ -42,10 +46,10 @@ export async function registerUser(input: {
       displayName: input.displayName?.trim() || username,
       role: userCount === 0 ? "ADMIN" : "USER",
       preferences: {
-        create: {},
+        create: newUserPreferencesData(),
       },
       notificationSettings: {
-        create: {},
+        create: newUserNotificationSettingsData(),
       },
     },
   });
@@ -139,8 +143,8 @@ export async function createUserByAdmin(input: {
       passwordHash,
       displayName: input.displayName?.trim() || username,
       role: "USER",
-      preferences: { create: {} },
-      notificationSettings: { create: {} },
+      preferences: { create: newUserPreferencesData() },
+      notificationSettings: { create: newUserNotificationSettingsData() },
     },
   });
 }

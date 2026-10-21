@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth/password";
 import { createSession } from "@/lib/auth/session";
 import { usernameFromClaims, type OidcClaims } from "@/lib/auth/oidc";
+import {
+  newUserNotificationSettingsData,
+  newUserPreferencesData,
+} from "@/lib/settings/instance-defaults";
 
 /**
  * Resolves an OIDC identity to a local user and returns a fresh session token.
@@ -75,8 +79,8 @@ async function createUserFromClaims(claims: OidcClaims, issuer: string) {
       role: userCount === 0 ? "ADMIN" : "USER",
       oidcSubject: claims.sub,
       oidcIssuer: issuer,
-      preferences: { create: {} },
-      notificationSettings: { create: {} },
+      preferences: { create: newUserPreferencesData() },
+      notificationSettings: { create: newUserNotificationSettingsData() },
     },
   });
 }

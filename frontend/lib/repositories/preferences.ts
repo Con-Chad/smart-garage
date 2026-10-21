@@ -7,6 +7,7 @@ import {
   clampMaintenanceDueSoonKm,
 } from "@/lib/settings/types";
 import type { DesignPresetId } from "@/lib/theme/presets";
+import { defaultSettingsForInstance } from "@/lib/settings/instance-defaults";
 import { clampBackgroundBlur } from "@/lib/theme/presets";
 import {
   DEFAULT_MAINTENANCE_THRESHOLDS,
@@ -32,7 +33,7 @@ export type AppearancePreferences = {
 
 export async function findPreferencesForUser(userId: string): Promise<UserSettings> {
   const row = await prisma.userPreferences.findUnique({ where: { userId } });
-  if (!row) return DEFAULT_SETTINGS;
+  if (!row) return defaultSettingsForInstance();
 
   return {
     theme: sanitizeThemeMode(row.theme),

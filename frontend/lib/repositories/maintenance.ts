@@ -134,6 +134,16 @@ export async function refreshScheduleDueStatus(
     thresholds,
   );
 
+  const unchanged =
+    sameInstant(schedule.lastPerformedAt, baseline.performedAt) &&
+    schedule.lastOdometerKm === baseline.odometerKm &&
+    sameInstant(schedule.nextDueAt, computed.nextDueAt) &&
+    schedule.nextDueOdometerKm === computed.nextDueOdometerKm &&
+    schedule.dueStatus === computed.dueStatus;
+  // Pages refresh every schedule on load; skipping no-op writes keeps
+  // `updatedAt` meaningful for API sync and saves SQLite a write per schedule.
+  if (unchanged) return;
+
   await client.vehicleMaintenanceSchedule.update({
     where: { id: scheduleId },
     data: {
@@ -144,6 +154,10 @@ export async function refreshScheduleDueStatus(
       dueStatus: computed.dueStatus,
     },
   });
+}
+
+function sameInstant(a: Date | null, b: Date | null): boolean {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
 }
 
 export async function refreshAllScheduleDueStatuses(

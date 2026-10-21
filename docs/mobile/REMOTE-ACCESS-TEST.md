@@ -45,7 +45,7 @@ GitHub creates new container packages as **private**. Either:
 | Field | Value |
 |---|---|
 | Name | `smart-garage-test` |
-| Repository | `ghcr.io/con-chad/smart-garage:latest` |
+| Repository | `ghcr.io/con-chad/smart-garage:development` |
 | Port | host `<<free port, e.g. 3001>>` → container `3000` |
 | Path | host `/mnt/user/appdata/smart-garage-test` → container `/data` |
 | Variable `DEFAULT_LOCALE` | `en` |
@@ -53,6 +53,11 @@ GitHub creates new container packages as **private**. Either:
 | Variable `DEFAULT_CURRENCY` | `USD` |
 | Variable `DEFAULT_DISTANCE_UNIT` | `mi` |
 | Variable `DEFAULT_VOLUME_UNIT` | `gal` |
+
+Use `:development` here. CI builds it on every push to `main`. `:latest`
+only exists after a stable publish (a `v*` tag, or **Actions** → **Publish
+Docker image** → **Run workflow** → channel `stable`), so production should
+switch to `:latest` only after that has run.
 
 The `DEFAULT_*` variables only apply to accounts created from now on. Your
 existing account keeps its settings, so set **Settings → Regional** to

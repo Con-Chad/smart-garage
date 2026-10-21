@@ -32,7 +32,7 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   the web app limits those features to the owner. The change is made share-aware
   through `resolveVehicleAccess`, as its own upstreamable commit.
 - **D-011: US defaults for new users.** Distance `mi`, volume `gal`, currency
-  `USD`, locale `en`, and a US timezone. These are configurable through env
+  `USD`, locale `en`, and timezone `America/Chicago`. These are configurable through env
   (`DEFAULT_DISTANCE_UNIT`, `DEFAULT_VOLUME_UNIT`, `DEFAULT_CURRENCY`,
   `DEFAULT_LOCALE`, `DEFAULT_TIMEZONE`), and upstream keeps its current defaults
   when they're unset. **Storage stays metric** (km, liters, cents) and the API
@@ -65,3 +65,18 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   unless `UNIFIEDPUSH_ALLOW_PRIVATE_ENDPOINTS=true`.
 - **D-023: Writes are idempotent.** API writes accept a client-generated
   `clientId` so the app's offline outbox can retry safely.
+- **D-024: Login rate limiting is in memory.** Failed sign-ins are counted per
+  address and username (5 per 15 min) and per address (20 per 15 min), and
+  the web form and `POST /api/v1/auth/login` share the same counters.
+  *Why:* the app runs as a single container, so process memory needs no
+  table or cleanup. Only failures count, so a correct password is never
+  slowed down.
+- **D-025: `/api/v1/health` is a separate endpoint.** It needs no
+  authentication and leaves out the user/vehicle counts that `/api/health`
+  exposes. It returns `service: "smart-garage"` so the app can tell Smart
+  Garage apart from a Cloudflare Access login page answering in its place.
+- **D-026: v1 also accepts the session cookie.** A browser session works for
+  exploring the API while signed in to the web UI. Endpoints that act on
+  "this device" (logout, and later push registration) require a device
+  token.
+

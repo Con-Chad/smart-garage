@@ -1,6 +1,12 @@
 import type { User } from "@prisma/client";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/db/retry";
+import { parseBearerDeviceToken } from "@/lib/auth/device-token";
+import {
+  findActiveDeviceByToken,
+  touchApiDeviceLastUsed,
+} from "@/lib/repositories/api-devices";
 import {
   deleteSession,
   getSessionByToken,
@@ -22,10 +28,53 @@ function logSessionIssue(reason: string, extra?: Record<string, string>) {
   console.warn(`[auth] session rejected: ${reason}`, extra ?? {});
 }
 
+export type CurrentApiDevice = {
+  id: string;
+  name: string;
+  user: CurrentUser;
+};
+
+/**
+ * The signed-in user: from the browser session cookie, or — when there is no
+ * valid cookie — from an `Authorization: Bearer sgd_…` device token (the
+ * mobile app). Every service that calls this therefore works unchanged for
+ * both the web UI and `/api/v1`. Bearer auth adds no CSRF exposure: browsers
+ * never attach an `Authorization` header on their own.
+ */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const token = await getSessionTokenFromCookies();
+  if (token) {
+    const user = await getUserFromSessionToken(token);
+    if (user) return user;
+  }
+
+  const device = await getCurrentApiDevice();
+  return device?.user ?? null;
+}
+
+/** The API device behind the current request's bearer token, if any. */
+export async function getCurrentApiDevice(): Promise<CurrentApiDevice | null> {
+  const token = parseBearerDeviceToken((await headers()).get("authorization"));
   if (!token) return null;
 
+  const device = await findActiveDeviceByToken(token);
+  if (!device) {
+    logSessionIssue("device token unknown or revoked");
+    return null;
+  }
+  if (!device.user.isActive) {
+    logSessionIssue("device token belongs to a deactivated user");
+    return null;
+  }
+
+  await touchApiDeviceLastUsed(device.id).catch(() => {
+    // Best-effort bookkeeping; never fail a request over a timestamp.
+  });
+
+  return { id: device.id, name: device.name, user: device.user };
+}
+
+async function getUserFromSessionToken(token: string): Promise<CurrentUser | null> {
   const session = await withDbRetry(() => getSessionByToken(token));
   if (!session) {
     // Well-formed token, but no matching row in the database — most likely a

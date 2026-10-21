@@ -64,17 +64,29 @@ export async function registerUser(input: {
   return user;
 }
 
-export async function loginUser(input: {
-  username: string;
-  password: string;
-  rememberMe?: boolean;
-}) {
+/**
+ * Checks a username/password pair without creating a session. Shared by the
+ * web login (which then sets the session cookie) and the API login (which
+ * issues a device token instead). Throws `INVALID_CREDENTIALS` for unknown,
+ * inactive or wrong-password accounts alike, so callers can't tell them apart.
+ */
+export async function verifyCredentials(input: { username: string; password: string }) {
   const username = input.username.trim().toLowerCase();
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user || !user.isActive) throw new Error("INVALID_CREDENTIALS");
 
   const valid = await verifyPassword(input.password, user.passwordHash);
   if (!valid) throw new Error("INVALID_CREDENTIALS");
+
+  return user;
+}
+
+export async function loginUser(input: {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}) {
+  const user = await verifyCredentials(input);
 
   const remember = input.rememberMe === true;
   const token = await createSession(user.id, remember);

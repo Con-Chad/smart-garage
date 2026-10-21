@@ -216,6 +216,7 @@ model User {
   vehicleShares        VehicleShare[]
   wishlistItems        WishlistItem[]
   sessions             Session[]
+  apiDevices           ApiDevice[]
   preferences          UserPreferences?
   maintenanceRecords   MaintenanceRecord[]       @relation("MaintenanceRecordCreatedBy")
   expenses             Expense[]                 @relation("ExpenseCreatedBy")
@@ -239,6 +240,26 @@ model Session {
 
   @@index([userId])
   @@index([token])
+}
+
+/// A signed-in mobile app (or other API client). The bearer token is shown
+/// once at login and only its SHA-256 hash is stored, so a database leak does
+/// not expose usable tokens. Revoking sets `revokedAt`; the row stays so the
+/// device list can show what was revoked and when.
+model ApiDevice {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  tokenHash   String    @unique
+  tokenPrefix String
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model UserPreferences {

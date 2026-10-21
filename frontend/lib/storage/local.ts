@@ -8,6 +8,7 @@ import {
   getMaxUploadSizeBytes,
   resolveStoredFilePath,
 } from "./paths";
+import { contentMatchesMimeType } from "./sniff";
 
 export type SavedFile = {
   storageKey: string;
@@ -47,10 +48,14 @@ async function saveFileToStorage(
     throw new Error("FILE_TOO_LARGE");
   }
 
+  const buffer = Buffer.from(await file.arrayBuffer());
+  if (!contentMatchesMimeType(buffer, file.type)) {
+    throw new Error("INVALID_FILE_TYPE");
+  }
+
   const absolutePath = resolveStoredFilePath(storageKey);
 
   await mkdir(path.dirname(absolutePath), { recursive: true });
-  const buffer = Buffer.from(await file.arrayBuffer());
   await writeFile(absolutePath, buffer);
 
   return {

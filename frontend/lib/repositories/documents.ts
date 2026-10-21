@@ -1,6 +1,6 @@
 import type { DocumentCategory, DocumentPurpose } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { vehicleAccessWhere } from "@/lib/vehicles/access";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 import type { SavedFile } from "@/lib/storage/local";
 
 const fileDocumentPurposes: DocumentPurpose[] = [
@@ -111,8 +111,9 @@ export async function createVehicleImageDocument(
   });
 }
 
+/** Files on vehicles the user owns or that are shared with them. */
 export async function listFileDocumentsForOwner(
-  ownerUserId: string,
+  userId: string,
   vehicleId?: string,
 ) {
   return prisma.document.findMany({
@@ -120,8 +121,7 @@ export async function listFileDocumentsForOwner(
       deletedAt: null,
       purpose: { in: fileDocumentPurposes },
       vehicle: {
-        ownerUserId,
-        deletedAt: null,
+        ...vehicleAccessWhere(userId),
         ...(vehicleId ? { id: vehicleId } : {}),
       },
     },
@@ -130,16 +130,15 @@ export async function listFileDocumentsForOwner(
   });
 }
 
-export async function findDocumentForOwner(documentId: string, ownerUserId: string) {
+/** A document the user may delete: on a vehicle they can edit, or their own upload. */
+export async function findDocumentForOwner(documentId: string, userId: string) {
   return prisma.document.findFirst({
     where: {
       id: documentId,
       deletedAt: null,
       OR: [
-        {
-          vehicle: { ownerUserId, deletedAt: null },
-        },
-        { uploadedByUserId: ownerUserId },
+        { vehicle: vehicleEditWhere(userId) },
+        { uploadedByUserId: userId },
       ],
     },
     include: documentInclude,
@@ -150,7 +149,7 @@ export async function findDocumentForOwner(documentId: string, ownerUserId: stri
  * Documents a user is allowed to *view*: those attached to a vehicle they can
  * access (owner or via a share), plus anything they uploaded themselves. Used
  * for downloads/inline viewing so shared vehicles show their images and files.
- * Mutations (delete) stay owner-scoped via {@link findDocumentForOwner}.
+ * Deletes are scoped to editors via {@link findDocumentForOwner}.
  */
 export async function findAccessibleDocument(documentId: string, userId: string) {
   return prisma.document.findFirst({

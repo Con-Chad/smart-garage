@@ -1,7 +1,7 @@
 import type { BodyType, DriveType, FuelType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buildVehicleMetadata } from "@/lib/domain/vehicle-metadata";
-import { vehicleAccessWhere } from "@/lib/vehicles/access";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 
 const vehicleInclude = {
   manufacturer: true,
@@ -78,6 +78,30 @@ export async function findVehicleById(
   return prisma.vehicle.findFirst({
     where: { id, ownerUserId, deletedAt: null },
     include: vehicleInclude,
+  });
+}
+
+/** Vehicles the user may log data for (own + shared as editor), for form pickers. */
+export async function listEditableVehicles(
+  userId: string,
+): Promise<VehicleWithRelations[]> {
+  return prisma.vehicle.findMany({
+    where: vehicleEditWhere(userId),
+    include: vehicleInclude,
+    orderBy: [{ updatedAt: "desc" }],
+  });
+}
+
+/** A vehicle the user may change data on, or null (also for viewers). */
+export async function findEditableVehicle(id: string, userId: string) {
+  return prisma.vehicle.findFirst({
+    where: { id, ...vehicleEditWhere(userId) },
+    select: {
+      id: true,
+      ownerUserId: true,
+      currentOdometerKm: true,
+      purchaseCurrency: true,
+    },
   });
 }
 

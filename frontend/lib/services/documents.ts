@@ -8,7 +8,8 @@ import {
   softDeleteDocument,
   type SerializedDocument,
 } from "@/lib/repositories/documents";
-import { findVehicleById } from "@/lib/repositories/vehicles";
+import { findEditableVehicle } from "@/lib/repositories/vehicles";
+import { prisma } from "@/lib/prisma";
 import { isViewableInline } from "@/lib/storage/paths";
 import { deleteStoredFile, saveVehicleDocument } from "@/lib/storage/local";
 import type { UploadDocumentInput } from "@/lib/validations/document";
@@ -40,8 +41,17 @@ export async function uploadVehicleDocument(
   file: File,
 ) {
   const ownerUserId = await getCurrentUserId();
-  const vehicle = await findVehicleById(input.vehicleId, ownerUserId);
+  // Owners and shared editors may upload; viewers get VEHICLE_NOT_FOUND.
+  const vehicle = await findEditableVehicle(input.vehicleId, ownerUserId);
   if (!vehicle) throw new Error("VEHICLE_NOT_FOUND");
+  if (input.maintenanceRecordId) {
+    // A receipt may only be attached to a record of the same vehicle.
+    const record = await prisma.maintenanceRecord.findFirst({
+      where: { id: input.maintenanceRecordId, vehicleId: input.vehicleId },
+      select: { id: true },
+    });
+    if (!record) throw new Error("VEHICLE_NOT_FOUND");
+  }
 
   const saved = await saveVehicleDocument(input.vehicleId, file);
   const document = await createVehicleFileDocument({

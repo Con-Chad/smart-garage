@@ -68,3 +68,17 @@ export function vehicleAccessWhere(userId: string) {
     ],
   };
 }
+
+/**
+ * Vehicles whose data the user may change: their own, plus those shared with
+ * them as EDITOR. Viewers match {@link vehicleAccessWhere} but not this.
+ */
+export function vehicleEditWhere(userId: string) {
+  return {
+    deletedAt: null as null,
+    OR: [
+      { ownerUserId: userId },
+      { shares: { some: { userId, role: "EDITOR" as const } } },
+    ],
+  };
+}

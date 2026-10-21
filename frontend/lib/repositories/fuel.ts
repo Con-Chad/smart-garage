@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 
 export type SerializedFuelEntry = {
   id: string;
@@ -49,13 +50,14 @@ export function serializeFuelEntry(entry: FuelRow): SerializedFuelEntry {
   };
 }
 
+/** Fill-ups on vehicles the user owns or that are shared with them. */
 export async function listFuelEntriesForOwner(
-  ownerUserId: string,
+  userId: string,
   vehicleId?: string,
 ) {
   return prisma.fuelEntry.findMany({
     where: {
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
       ...(vehicleId ? { vehicleId } : {}),
     },
     include: fuelInclude,
@@ -90,11 +92,12 @@ export async function createFuelEntryRecord(input: {
   });
 }
 
-export async function deleteFuelEntryRecord(entryId: string, ownerUserId: string) {
+/** Deletes a fill-up, scoped to vehicles the user may edit. */
+export async function deleteFuelEntryRecord(entryId: string, userId: string) {
   const entry = await prisma.fuelEntry.findFirst({
     where: {
       id: entryId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleEditWhere(userId),
     },
   });
   if (!entry) return false;

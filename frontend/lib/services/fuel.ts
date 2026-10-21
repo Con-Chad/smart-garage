@@ -6,7 +6,7 @@ import {
   serializeFuelEntry,
   type SerializedFuelEntry,
 } from "@/lib/repositories/fuel";
-import { findVehicleById } from "@/lib/repositories/vehicles";
+import { findEditableVehicle } from "@/lib/repositories/vehicles";
 import { findPreferencesForUser } from "@/lib/repositories/preferences";
 import type { CreateFuelEntryInput } from "@/lib/validations/fuel";
 
@@ -20,7 +20,8 @@ export async function getFuelPageData(
 
 export async function createFuelEntry(input: CreateFuelEntryInput) {
   const ownerUserId = await getCurrentUserId();
-  const vehicle = await findVehicleById(input.vehicleId, ownerUserId);
+  // Owners and shared editors may log fill-ups; viewers get VEHICLE_NOT_FOUND.
+  const vehicle = await findEditableVehicle(input.vehicleId, ownerUserId);
   if (!vehicle) throw new Error("VEHICLE_NOT_FOUND");
   const preferences = await findPreferencesForUser(ownerUserId);
 

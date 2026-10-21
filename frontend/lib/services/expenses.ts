@@ -7,9 +7,10 @@ import {
   serializeExpense,
   type SerializedExpense,
 } from "@/lib/repositories/expenses";
-import { findVehicleById } from "@/lib/repositories/vehicles";
+import { findEditableVehicle } from "@/lib/repositories/vehicles";
 import { findPreferencesForUser } from "@/lib/repositories/preferences";
 import { notifyExpenseAdded } from "@/lib/services/notifications";
+import { prisma } from "@/lib/prisma";
 import type { CreateExpenseInput } from "@/lib/validations/expense";
 
 export async function getExpensesPageData(
@@ -22,8 +23,18 @@ export async function getExpensesPageData(
 
 export async function createExpense(input: CreateExpenseInput) {
   const ownerUserId = await getCurrentUserId();
-  const vehicle = await findVehicleById(input.vehicleId, ownerUserId);
+  // Owners and shared editors may add expenses; viewers get VEHICLE_NOT_FOUND.
+  const vehicle = await findEditableVehicle(input.vehicleId, ownerUserId);
   if (!vehicle) throw new Error("VEHICLE_NOT_FOUND");
+  if (input.maintenanceRecordId) {
+    // A linked record must belong to the same vehicle, so an id from another
+    // user's garage can't be attached.
+    const record = await prisma.maintenanceRecord.findFirst({
+      where: { id: input.maintenanceRecordId, vehicleId: input.vehicleId },
+      select: { id: true },
+    });
+    if (!record) throw new Error("MAINTENANCE_RECORD_NOT_FOUND");
+  }
   const preferences = await findPreferencesForUser(ownerUserId);
 
   const expense = await createExpenseRecord({

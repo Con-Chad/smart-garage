@@ -14,6 +14,7 @@ import {
 import { scheduleDisplayName } from "@/lib/maintenance/display";
 import { getMaintenanceThresholds } from "@/lib/repositories/preferences";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 
 const scheduleInclude = {
   template: true,
@@ -24,6 +25,7 @@ const scheduleInclude = {
       model: true,
       licensePlate: true,
       currentOdometerKm: true,
+      ownerUserId: true,
     },
   },
 } satisfies Prisma.VehicleMaintenanceScheduleInclude;
@@ -43,22 +45,35 @@ export async function listSchedulesForVehicle(vehicleId: string) {
   });
 }
 
-export async function listSchedulesForOwner(ownerUserId: string) {
+/** Active schedules on vehicles the user owns or that are shared with them. */
+export async function listSchedulesForOwner(userId: string) {
   return prisma.vehicleMaintenanceSchedule.findMany({
     where: {
       isActive: true,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
     },
     include: scheduleInclude,
     orderBy: [{ dueStatus: "desc" }, { nextDueAt: "asc" }],
   });
 }
 
-export async function findScheduleById(scheduleId: string, ownerUserId: string) {
+/** A schedule the user may change (owner or shared editor), or null. */
+export async function findScheduleById(scheduleId: string, userId: string) {
   return prisma.vehicleMaintenanceSchedule.findFirst({
     where: {
       id: scheduleId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleEditWhere(userId),
+    },
+    include: scheduleInclude,
+  });
+}
+
+/** A schedule the user may see (owner, editor or viewer), or null. */
+export async function findAccessibleSchedule(scheduleId: string, userId: string) {
+  return prisma.vehicleMaintenanceSchedule.findFirst({
+    where: {
+      id: scheduleId,
+      vehicle: vehicleAccessWhere(userId),
     },
     include: scheduleInclude,
   });

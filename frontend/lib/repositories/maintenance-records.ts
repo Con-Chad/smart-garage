@@ -2,6 +2,7 @@ import type { MaintenanceCategory, Prisma } from "@prisma/client";
 import type { Locale } from "@/lib/i18n/routing";
 import { scheduleDisplayName } from "@/lib/maintenance/display";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 import {
   listItemsForRecords,
   type SerializedMaintenanceItem,
@@ -81,13 +82,13 @@ export function serializeMaintenanceRecord(
 
 export async function listRecordsForSchedule(
   scheduleId: string,
-  ownerUserId: string,
+  userId: string,
   locale: Locale,
 ) {
   const records = await prisma.maintenanceRecord.findMany({
     where: {
       scheduleId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
     },
     include: recordInclude,
     orderBy: [{ performedAt: "desc" }, { odometerKm: "desc" }, { createdAt: "desc" }],
@@ -99,14 +100,15 @@ export async function listRecordsForSchedule(
   );
 }
 
-export async function findRecordForOwner(recordId: string, ownerUserId: string) {
+/** A record the user may change (owner or shared editor), or null. */
+export async function findRecordForOwner(recordId: string, userId: string) {
   return prisma.maintenanceRecord.findFirst({
     where: {
       id: recordId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleEditWhere(userId),
     },
     include: {
-      vehicle: { select: { id: true, currentOdometerKm: true } },
+      vehicle: { select: { id: true, currentOdometerKm: true, ownerUserId: true } },
       schedule: true,
     },
   });
@@ -114,34 +116,34 @@ export async function findRecordForOwner(recordId: string, ownerUserId: string) 
 
 export async function countRecordsForSchedule(
   scheduleId: string,
-  ownerUserId: string,
+  userId: string,
 ) {
   return prisma.maintenanceRecord.count({
     where: {
       scheduleId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
     },
   });
 }
 
 /**
- * Hard-deletes a maintenance record the user owns. Linked maintenance items
+ * Hard-deletes a maintenance record the user may edit. Linked maintenance items
  * cascade automatically; any auto-created expense linked to this record is
  * removed in the same transaction so an accidental log leaves nothing behind.
  * Notes/documents keep their history (their FK is set to null by the schema).
- * Returns the deleted record's `scheduleId` (or null) so callers can refresh
- * the schedule's due status.
+ * Returns the deleted record's `scheduleId` (or null) and the vehicle owner,
+ * so callers can refresh the schedule's due status with the owner's thresholds.
  */
 export async function deleteMaintenanceRecord(
   recordId: string,
-  ownerUserId: string,
-): Promise<{ scheduleId: string | null } | null> {
+  userId: string,
+): Promise<{ scheduleId: string | null; vehicleOwnerId: string } | null> {
   const record = await prisma.maintenanceRecord.findFirst({
     where: {
       id: recordId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleEditWhere(userId),
     },
-    select: { id: true, scheduleId: true },
+    select: { id: true, scheduleId: true, vehicle: { select: { ownerUserId: true } } },
   });
   if (!record) return null;
 
@@ -150,7 +152,7 @@ export async function deleteMaintenanceRecord(
     await tx.maintenanceRecord.delete({ where: { id: record.id } });
   });
 
-  return { scheduleId: record.scheduleId };
+  return { scheduleId: record.scheduleId, vehicleOwnerId: record.vehicle.ownerUserId };
 }
 
 export type HistoryFilters = {
@@ -162,7 +164,7 @@ export type HistoryFilters = {
 };
 
 export async function listAllRecordsForOwner(
-  ownerUserId: string,
+  userId: string,
   locale: Locale,
   limit = 200,
   filters: HistoryFilters = {},
@@ -170,7 +172,7 @@ export async function listAllRecordsForOwner(
   const search = filters.search?.trim();
 
   const where: Prisma.MaintenanceRecordWhereInput = {
-    vehicle: { ownerUserId, deletedAt: null },
+    vehicle: vehicleAccessWhere(userId),
   };
 
   if (filters.vehicleId) {

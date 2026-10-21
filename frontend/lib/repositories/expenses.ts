@@ -1,5 +1,6 @@
 import type { ExpenseCategory } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 
 export type SerializedExpense = {
   id: string;
@@ -52,13 +53,14 @@ export function serializeExpense(expense: ExpenseRow): SerializedExpense {
   };
 }
 
+/** Expenses on vehicles the user owns or that are shared with them. */
 export async function listExpensesForOwner(
-  ownerUserId: string,
+  userId: string,
   vehicleId?: string,
 ) {
   return prisma.expense.findMany({
     where: {
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
       ...(vehicleId ? { vehicleId } : {}),
     },
     include: expenseInclude,
@@ -66,11 +68,11 @@ export async function listExpensesForOwner(
   });
 }
 
-export async function findExpenseForOwner(expenseId: string, ownerUserId: string) {
+export async function findExpenseForOwner(expenseId: string, userId: string) {
   return prisma.expense.findFirst({
     where: {
       id: expenseId,
-      vehicle: { ownerUserId, deletedAt: null },
+      vehicle: vehicleAccessWhere(userId),
     },
     include: expenseInclude,
   });
@@ -103,8 +105,12 @@ export async function createExpenseRecord(input: {
   });
 }
 
-export async function deleteExpenseRecord(expenseId: string, ownerUserId: string) {
-  const expense = await findExpenseForOwner(expenseId, ownerUserId);
+/** Deletes an expense, scoped to vehicles the user may edit. */
+export async function deleteExpenseRecord(expenseId: string, userId: string) {
+  const expense = await prisma.expense.findFirst({
+    where: { id: expenseId, vehicle: vehicleEditWhere(userId) },
+    select: { id: true },
+  });
   if (!expense) return false;
   await prisma.expense.delete({ where: { id: expenseId } });
   return true;

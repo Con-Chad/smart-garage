@@ -3,6 +3,7 @@ import { getCurrentUserId } from "@/lib/auth/current-user";
 import { computeNextDue } from "@/lib/maintenance/scheduler";
 import { MAINTENANCE_TEMPLATE_SEEDS } from "@/lib/maintenance/templates-data";
 import {
+  findAccessibleSchedule,
   findScheduleById,
   listMaintenanceTemplates,
   listSchedulesForOwner,
@@ -46,6 +47,7 @@ import {
   estimateLastService,
 } from "@/lib/maintenance/setup-estimate";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere, vehicleEditWhere } from "@/lib/vehicles/access";
 import type { SerializedMaintenanceRecord } from "@/lib/repositories/maintenance-records";
 
 export async function getMaintenancePageData(locale: Locale) {
@@ -91,9 +93,9 @@ function sortSchedulesByPriority<
 export async function getScheduleDetailData(scheduleId: string, locale: Locale) {
   const ownerUserId = await getCurrentUserId();
   const thresholds = await getMaintenanceThresholds(ownerUserId);
-  await refreshScheduleDueStatus(prisma, scheduleId, thresholds);
-  const schedule = await findScheduleById(scheduleId, ownerUserId);
+  const schedule = await findAccessibleSchedule(scheduleId, ownerUserId);
   if (!schedule) return null;
+  await refreshScheduleDueStatus(prisma, scheduleId, thresholds);
 
   const [records, itemDefaults] = await Promise.all([
     listRecordsForSchedule(scheduleId, ownerUserId, locale),
@@ -117,12 +119,12 @@ export async function getHistoryPageData(locale: Locale, filters: HistoryFilters
   const hasDateRange = Boolean(filters.fromDate || filters.toDate);
   const includeNonMaintenance = !filters.category;
   const search = filters.search?.trim();
-  const vehicleWhere = { ownerUserId, deletedAt: null };
+  const vehicleWhere = vehicleAccessWhere(ownerUserId);
 
   const [records, vehicles, fuelEntries, odometerLogs] = await Promise.all([
     listAllRecordsForOwner(ownerUserId, locale, 200, filters),
     prisma.vehicle.findMany({
-      where: { ownerUserId, deletedAt: null },
+      where: vehicleWhere,
       select: { id: true, make: true, model: true, licensePlate: true },
       orderBy: { createdAt: "asc" },
     }),
@@ -274,7 +276,7 @@ function buildHistoryEvents(
 export async function getVehicleMaintenanceData(vehicleId: string, locale: Locale) {
   const ownerUserId = await getCurrentUserId();
   const vehicle = await prisma.vehicle.findFirst({
-    where: { id: vehicleId, ownerUserId, deletedAt: null },
+    where: { id: vehicleId, ...vehicleAccessWhere(ownerUserId) },
     select: { id: true, make: true, model: true, currentOdometerKm: true },
   });
   if (!vehicle) return null;
@@ -352,7 +354,7 @@ export async function seedDefaultSchedulesForVehicle(vehicleId: string) {
 export async function createMaintenanceSchedule(input: CreateScheduleInput) {
   const ownerUserId = await getCurrentUserId();
   const vehicle = await prisma.vehicle.findFirst({
-    where: { id: input.vehicleId, ownerUserId, deletedAt: null },
+    where: { id: input.vehicleId, ...vehicleEditWhere(ownerUserId) },
   });
   if (!vehicle) throw new Error("Vehicle not found");
   const preferences = await findPreferencesForUser(ownerUserId);
@@ -369,7 +371,9 @@ export async function createMaintenanceSchedule(input: CreateScheduleInput) {
   const intervalMonths =
     input.intervalMonths ?? template?.defaultIntervalMonths ?? null;
 
-  const thresholds = await getMaintenanceThresholds(ownerUserId);
+  // Due status is stored on the schedule, so it follows the vehicle owner's
+  // thresholds even when a shared editor makes the change.
+  const thresholds = await getMaintenanceThresholds(vehicle.ownerUserId);
   const computed = computeNextDue(
     { intervalKm, intervalMonths },
     {
@@ -438,7 +442,7 @@ export async function updateMaintenanceSchedule(input: UpdateScheduleInput) {
       ? input.lastOdometerKm
       : schedule.lastOdometerKm;
 
-  const thresholds = await getMaintenanceThresholds(ownerUserId);
+  const thresholds = await getMaintenanceThresholds(schedule.vehicle.ownerUserId);
 
   await prisma.vehicleMaintenanceSchedule.update({
     where: { id: input.scheduleId },
@@ -478,7 +482,8 @@ export async function logMaintenanceService(
   const odometerKm = input.odometerKm ?? schedule.vehicle.currentOdometerKm;
   const costCents = input.costCents ?? 0;
   const cleanItems = dropBlankItems(items);
-  const thresholds = await getMaintenanceThresholds(ownerUserId);
+  const vehicleOwnerId = schedule.vehicle.ownerUserId;
+  const thresholds = await getMaintenanceThresholds(vehicleOwnerId);
 
   const record = await prisma.$transaction(async (tx) => {
     const created = await tx.maintenanceRecord.create({
@@ -516,7 +521,7 @@ export async function logMaintenanceService(
     return created;
   });
 
-  await refreshAllScheduleDueStatuses(ownerUserId, thresholds);
+  await refreshAllScheduleDueStatuses(vehicleOwnerId, thresholds);
 
   if (input.saveAsDefault) {
     await replaceScheduleDefaults(schedule.id, cleanItems);
@@ -591,8 +596,8 @@ export async function updateMaintenanceRecord(
   }
 
   await refreshAllScheduleDueStatuses(
-    ownerUserId,
-    await getMaintenanceThresholds(ownerUserId),
+    record.vehicle.ownerUserId,
+    await getMaintenanceThresholds(record.vehicle.ownerUserId),
   );
 }
 
@@ -605,7 +610,7 @@ export async function deleteMaintenanceRecordEntry(recordId: string) {
     await refreshScheduleDueStatus(
       prisma,
       deleted.scheduleId,
-      await getMaintenanceThresholds(ownerUserId),
+      await getMaintenanceThresholds(deleted.vehicleOwnerId),
     );
   }
 }

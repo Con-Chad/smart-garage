@@ -13,6 +13,7 @@ import {
   updateNote,
 } from "@/lib/repositories/notes";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere } from "@/lib/vehicles/access";
 import type { CreateNoteInput, NoteFiltersInput, UpdateNoteInput } from "@/lib/validations/notes";
 
 export async function getNotesPageData(locale: Locale, filters: NoteFiltersInput) {
@@ -21,7 +22,7 @@ export async function getNotesPageData(locale: Locale, filters: NoteFiltersInput
     listNotesForOwner(ownerUserId, locale, filters),
     listTagsForOwner(ownerUserId),
     prisma.vehicle.findMany({
-      where: { ownerUserId, deletedAt: null },
+      where: vehicleAccessWhere(ownerUserId),
       select: { id: true, make: true, model: true, licensePlate: true },
       orderBy: { createdAt: "asc" },
     }),
@@ -41,7 +42,7 @@ export async function getNoteEditorData(locale: Locale, noteId?: string) {
   const ownerUserId = await getCurrentUserId();
   const [vehicles, templates, note] = await Promise.all([
     prisma.vehicle.findMany({
-      where: { ownerUserId, deletedAt: null },
+      where: vehicleAccessWhere(ownerUserId),
       select: { id: true, make: true, model: true, licensePlate: true },
       orderBy: { createdAt: "asc" },
     }),

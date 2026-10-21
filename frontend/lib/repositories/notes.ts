@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import type { Locale } from "@/lib/i18n/routing";
 import { prisma } from "@/lib/prisma";
+import { vehicleAccessWhere } from "@/lib/vehicles/access";
 import type { CreateNoteInput, NoteFiltersInput, UpdateNoteInput } from "@/lib/validations/notes";
 
 const noteInclude = {
@@ -74,10 +75,12 @@ async function resolveTagConnections(ownerUserId: string, tagNames: string[]) {
   return tags.map((tag) => ({ id: tag.id }));
 }
 
+// Notes stay private to their author, so linking one only needs read access:
+// any vehicle the author owns or that is shared with them.
 async function assertVehicleOwnership(ownerUserId: string, vehicleId: string | null | undefined) {
   if (!vehicleId) return;
   const vehicle = await prisma.vehicle.findFirst({
-    where: { id: vehicleId, ownerUserId, deletedAt: null },
+    where: { id: vehicleId, ...vehicleAccessWhere(ownerUserId) },
     select: { id: true },
   });
   if (!vehicle) throw new Error("Vehicle not found");
@@ -89,7 +92,7 @@ async function assertRecordOwnership(
 ) {
   if (!maintenanceRecordId) return;
   const record = await prisma.maintenanceRecord.findFirst({
-    where: { id: maintenanceRecordId, vehicle: { ownerUserId, deletedAt: null } },
+    where: { id: maintenanceRecordId, vehicle: vehicleAccessWhere(ownerUserId) },
     select: { id: true },
   });
   if (!record) throw new Error("Maintenance record not found");

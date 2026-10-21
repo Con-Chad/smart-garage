@@ -36,3 +36,16 @@ export async function shareVehicle(
 ) {
   return prisma.vehicleShare.create({ data: { vehicleId, userId, role } });
 }
+
+export async function createSchedule(
+  vehicleId: string,
+  overrides: { customName?: string; intervalKm?: number } = {},
+) {
+  return prisma.vehicleMaintenanceSchedule.create({
+    data: {
+      vehicleId,
+      customName: overrides.customName ?? "Oil change",
+      intervalKm: overrides.intervalKm ?? 10000,
+    },
+  });
+}

@@ -5,7 +5,7 @@ import { FuelAnalyticsPanel } from "@/components/fuel/FuelAnalyticsPanel";
 import { FuelLibrary } from "@/components/fuel/FuelLibrary";
 import { computeFuelAnalytics } from "@/lib/fuel/analytics";
 import { getFuelPageData } from "@/lib/services/fuel";
-import { listVehiclesByOwner } from "@/lib/repositories/vehicles";
+import { listEditableVehicles } from "@/lib/repositories/vehicles";
 import { getCurrentUserId } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function FuelPage({ params, searchParams }: Props) {
   const ownerUserId = await getCurrentUserId();
   const [{ entries }, vehicles] = await Promise.all([
     getFuelPageData(vehicleFilter),
-    listVehiclesByOwner(ownerUserId),
+    listEditableVehicles(ownerUserId),
   ]);
 
   const vehicleOptions = vehicles.map((vehicle) => ({

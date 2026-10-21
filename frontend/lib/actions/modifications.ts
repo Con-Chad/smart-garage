@@ -8,7 +8,7 @@ import {
   deleteModification,
   updateModification,
 } from "@/lib/repositories/modifications";
-import { findVehicleById } from "@/lib/repositories/vehicles";
+import { findEditableVehicle } from "@/lib/repositories/vehicles";
 import { z } from "zod";
 import { optionalEuroAmountSchema } from "@/lib/validations/money";
 
@@ -37,7 +37,7 @@ export async function createModificationAction(
 ): Promise<ModificationActionResult> {
   try {
     const ownerUserId = await getCurrentUserId();
-    const vehicle = await findVehicleById(vehicleId, ownerUserId);
+    const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
     if (!vehicle) return { success: false, error: "notFound" };
 
     const parsed = modificationSchema.parse({
@@ -86,7 +86,7 @@ export async function updateModificationAction(
 ): Promise<ModificationActionResult> {
   try {
     const ownerUserId = await getCurrentUserId();
-    const vehicle = await findVehicleById(vehicleId, ownerUserId);
+    const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
     if (!vehicle) return { success: false, error: "notFound" };
 
     const parsed = modificationSchema.parse({
@@ -132,7 +132,7 @@ export async function deleteModificationAction(
   modificationId: string,
 ): Promise<ModificationActionResult> {
   const ownerUserId = await getCurrentUserId();
-  const vehicle = await findVehicleById(vehicleId, ownerUserId);
+  const vehicle = await findEditableVehicle(vehicleId, ownerUserId);
   if (!vehicle) return { success: false, error: "notFound" };
 
   await deleteModification(modificationId, vehicleId);

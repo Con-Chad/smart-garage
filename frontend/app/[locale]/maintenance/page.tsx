@@ -2,7 +2,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { MaintenanceBoard } from "@/components/maintenance/MaintenanceBoard";
 import { getMaintenancePageData, seedMaintenanceTemplates, bootstrapSchedulesForOwner } from "@/lib/services/maintenance";
-import { listVehiclesByOwner } from "@/lib/repositories/vehicles";
+import { listEditableVehicles } from "@/lib/repositories/vehicles";
 import { getCurrentUserId } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ export default async function MaintenancePage({ params, searchParams }: Props) {
   await bootstrapSchedulesForOwner(ownerUserId);
   const [{ templates, schedules }, vehicles] = await Promise.all([
     getMaintenancePageData(locale as "en" | "de"),
-    listVehiclesByOwner(ownerUserId),
+    listEditableVehicles(ownerUserId),
   ]);
 
   const vehicleOptions = vehicles.map((vehicle) => ({

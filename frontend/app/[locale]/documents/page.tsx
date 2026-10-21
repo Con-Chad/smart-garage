@@ -2,7 +2,7 @@ import { getTranslations, setRequestLocale } from "next-intl/server";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DocumentsLibrary } from "@/components/documents/DocumentsLibrary";
 import { getDocumentsPageData } from "@/lib/services/documents";
-import { listVehiclesByOwner } from "@/lib/repositories/vehicles";
+import { listEditableVehicles } from "@/lib/repositories/vehicles";
 import { getCurrentUserId } from "@/lib/auth/current-user";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export default async function DocumentsPage({ params, searchParams }: Props) {
   const ownerUserId = await getCurrentUserId();
   const [{ documents }, vehicles] = await Promise.all([
     getDocumentsPageData(vehicleFilter),
-    listVehiclesByOwner(ownerUserId),
+    listEditableVehicles(ownerUserId),
   ]);
 
   const vehicleOptions = vehicles.map((vehicle) => ({

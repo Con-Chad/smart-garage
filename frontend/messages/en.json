@@ -1134,6 +1134,7 @@
       "passwordTooShort": "Password must be at least 8 characters",
       "usernameTaken": "Username already taken",
       "invalidCredentials": "Invalid username or password",
+      "tooManyAttempts": "Too many failed sign-in attempts. Please wait a few minutes and try again.",
       "failed": "Action failed",
       "oidc": "Single sign-on failed. Please try again or use your username and password.",
       "accountDisabled": "This account is disabled. Ask an administrator to re-enable it.",

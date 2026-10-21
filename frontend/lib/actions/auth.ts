@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getLocale } from "next-intl/server";
@@ -12,6 +13,13 @@ import {
 } from "@/lib/services/auth";
 import { requireAdmin } from "@/lib/auth/current-user";
 import {
+  LoginRateLimitedError,
+  assertLoginAllowed,
+  clientAddressFromHeaders,
+  recordLoginFailure,
+  recordLoginSuccess,
+} from "@/lib/auth/login-throttle";
+import {
   clearSessionCookie,
   deleteSession,
   getSessionTokenFromCookies,
@@ -23,6 +31,7 @@ export type AuthActionResult = {
 };
 
 function mapAuthError(error: unknown): string {
+  if (error instanceof LoginRateLimitedError) return "tooManyAttempts";
   if (error instanceof Error) {
     if (error.message === "INVALID_USERNAME") return "invalidUsername";
     if (error.message === "PASSWORD_TOO_SHORT") return "passwordTooShort";
@@ -36,12 +45,23 @@ export async function loginAction(
   _prev: AuthActionResult | null,
   formData: FormData,
 ): Promise<AuthActionResult> {
+  const username = String(formData.get("username") ?? "");
+  const address = clientAddressFromHeaders(await headers());
   try {
-    await loginUser({
-      username: String(formData.get("username") ?? ""),
-      password: String(formData.get("password") ?? ""),
-      rememberMe: formData.get("rememberMe") === "on",
-    });
+    assertLoginAllowed(address, username);
+    try {
+      await loginUser({
+        username,
+        password: String(formData.get("password") ?? ""),
+        rememberMe: formData.get("rememberMe") === "on",
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "INVALID_CREDENTIALS") {
+        recordLoginFailure(address, username);
+      }
+      throw error;
+    }
+    recordLoginSuccess(address, username);
     const locale = await getLocale();
     redirect(`/${locale}`);
   } catch (error) {

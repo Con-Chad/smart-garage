@@ -146,7 +146,8 @@
         "data": "Daten & Export",
         "catalog": "Katalog",
         "vehicleFields": "Fahrzeugfelder",
-        "fuelPrices": "Spritpreise"
+        "fuelPrices": "Spritpreise",
+        "devices": "Mobilgeräte"
       },
       "general": {
         "title": "Allgemein",
@@ -375,6 +376,19 @@
           "SA": "Sa",
           "SU": "So"
         }
+      },
+      "devices": {
+        "title": "Mobilgeräte",
+        "description": "Apps, die über die API mit Ihrem Konto angemeldet sind",
+        "listTitle": "Angemeldete Geräte",
+        "listDescription": "Jedes Gerät hat ein eigenes Token. Widerrufen Sie es, um das Gerät sofort abzumelden – etwa wenn ein Handy verloren geht.",
+        "empty": "Es hat sich noch kein Mobilgerät angemeldet.",
+        "created": "hinzugefügt {date}",
+        "lastUsed": "zuletzt verwendet {date}",
+        "neverUsed": "nie verwendet",
+        "revokedAt": "widerrufen {date}",
+        "revokedBadge": "Widerrufen",
+        "revoke": "Widerrufen"
       },
       "vehicleFields": {
         "title": "Fahrzeugfelder",

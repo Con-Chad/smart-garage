@@ -146,7 +146,8 @@
         "data": "Data & export",
         "catalog": "Catalog",
         "vehicleFields": "Vehicle fields",
-        "fuelPrices": "Fuel prices"
+        "fuelPrices": "Fuel prices",
+        "devices": "Mobile devices"
       },
       "general": {
         "title": "General",
@@ -375,6 +376,19 @@
           "SA": "Sat",
           "SU": "Sun"
         }
+      },
+      "devices": {
+        "title": "Mobile devices",
+        "description": "Apps signed in to your account through the API",
+        "listTitle": "Signed-in devices",
+        "listDescription": "Each device has its own token. Revoke one to sign it out immediately — for example if a phone is lost.",
+        "empty": "No mobile devices have signed in yet.",
+        "created": "added {date}",
+        "lastUsed": "last used {date}",
+        "neverUsed": "never used",
+        "revokedAt": "revoked {date}",
+        "revokedBadge": "Revoked",
+        "revoke": "Revoke"
       },
       "vehicleFields": {
         "title": "Vehicle fields",

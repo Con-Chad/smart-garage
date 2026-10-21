@@ -6,6 +6,7 @@ import { Link, usePathname } from "@/lib/i18n/navigation";
 const sections = [
   { href: "/settings", key: "general" as const, exact: true },
   { href: "/settings/notifications", key: "notifications" as const },
+  { href: "/settings/devices", key: "devices" as const },
   { href: "/settings/regional", key: "regional" as const },
   { href: "/settings/vehicle-fields", key: "vehicleFields" as const },
   { href: "/settings/fuel-prices", key: "fuelPrices" as const },

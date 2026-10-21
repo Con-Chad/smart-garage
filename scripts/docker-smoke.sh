@@ -15,10 +15,10 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "[smoke] Building image $IMAGE…"
+echo "[smoke] Building image $IMAGE..."
 docker build --build-arg APP_VERSION=smoke -t "$IMAGE" .
 
-echo "[smoke] Starting container on port $PORT…"
+echo "[smoke] Starting container on port $PORT..."
 docker run -d --name "$CONTAINER" \
   -p "${PORT}:3000" \
   -v "${VOLUME}:/data" \
@@ -26,7 +26,7 @@ docker run -d --name "$CONTAINER" \
   -e UPLOAD_DIR=/data/uploads \
   "$IMAGE" >/dev/null
 
-echo "[smoke] Waiting for /api/health (max ${MAX_WAIT}s)…"
+echo "[smoke] Waiting for /api/health (max ${MAX_WAIT}s)..."
 elapsed=0
 while [ "$elapsed" -lt "$MAX_WAIT" ]; do
   if curl -sf "http://127.0.0.1:${PORT}/api/health" >/tmp/smart-garage-smoke-health.json 2>/dev/null; then

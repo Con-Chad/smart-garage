@@ -20,6 +20,8 @@ import { saveCustomFieldValuesForVehicle } from "@/lib/repositories/custom-field
 import { readCustomFieldValues } from "@/lib/domain/custom-fields";
 import { resolveVehicleAccess } from "@/lib/vehicles/access";
 import { saveVehicleImage } from "@/lib/storage/local";
+import { buildVehicleMetadata } from "@/lib/domain/vehicle-metadata";
+import { prisma } from "@/lib/prisma";
 import {
   parseVehicleFormData,
   type VehicleFormInput,
@@ -298,6 +300,71 @@ export async function updateVehicleForCurrentUser(
   } catch (error) {
     return { success: false, error: mapError(error) };
   }
+}
+
+export type VehicleDetailsPatch = {
+  licensePlate?: string | null;
+  vin?: string | null;
+  hsn?: string | null;
+  tsn?: string | null;
+  color?: string | null;
+  notes?: string | null;
+  purchaseDate?: Date | null;
+  purchasePriceCents?: number | null;
+  purchaseCurrency?: string | null;
+};
+
+/**
+ * Updates descriptive fields only, leaving catalog links and specs alone
+ * (those stay with the full web form). Owners and shared editors may do this.
+ * Returns false when the user may not edit the vehicle.
+ */
+export async function updateVehicleDetailsForCurrentUser(
+  vehicleId: string,
+  patch: VehicleDetailsPatch,
+): Promise<boolean> {
+  const userId = await getCurrentUserId();
+  const access = await resolveVehicleAccess(userId, vehicleId);
+  if (!access?.canEdit) return false;
+
+  const text = (value: string | null | undefined) =>
+    value === undefined ? undefined : value?.trim() || null;
+
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: {
+      licensePlate: text(patch.licensePlate),
+      vin: text(patch.vin),
+      hsn: text(patch.hsn),
+      tsn: patch.tsn === undefined ? undefined : patch.tsn?.trim().toUpperCase() || null,
+      notes: text(patch.notes),
+      ...(patch.color !== undefined ? { metadata: buildVehicleMetadata(patch.color) } : {}),
+      purchaseDate: patch.purchaseDate,
+      purchasePriceCents:
+        patch.purchasePriceCents === undefined
+          ? undefined
+          : patch.purchasePriceCents === null
+            ? null
+            : BigInt(patch.purchasePriceCents),
+      purchaseCurrency: patch.purchaseCurrency,
+    },
+  });
+  return true;
+}
+
+/**
+ * Replaces the vehicle photo. Throws INVALID_FILE_TYPE / FILE_TOO_LARGE from
+ * storage; returns null when the user may not edit the vehicle.
+ */
+export async function replaceVehiclePhotoForCurrentUser(vehicleId: string, file: File) {
+  const userId = await getCurrentUserId();
+  const access = await resolveVehicleAccess(userId, vehicleId);
+  if (!access?.canEdit) return null;
+
+  const saved = await saveVehicleImage(vehicleId, file);
+  await softDeleteVehicleImages(vehicleId);
+  const document = await createVehicleImageDocument(vehicleId, userId, saved);
+  return document.id;
 }
 
 export async function deleteVehicleForCurrentUser(

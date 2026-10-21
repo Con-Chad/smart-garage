@@ -217,6 +217,7 @@ model User {
   wishlistItems        WishlistItem[]
   sessions             Session[]
   apiDevices           ApiDevice[]
+  apiIdempotencyKeys   ApiIdempotencyKey[]
   preferences          UserPreferences?
   maintenanceRecords   MaintenanceRecord[]       @relation("MaintenanceRecordCreatedBy")
   expenses             Expense[]                 @relation("ExpenseCreatedBy")
@@ -260,6 +261,28 @@ model ApiDevice {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// The stored outcome of an API write sent with an `Idempotency-Key`, so the
+/// mobile app's offline outbox can retry a request without applying it twice.
+/// Keyed per user (not per device) so a retry after signing in again still
+/// matches. `status` is null while the first attempt is in flight.
+/// `fingerprint` is a hash of method, path and body; reusing a key for a
+/// different request is rejected. Pruned after 7 days.
+model ApiIdempotencyKey {
+  id           String    @id @default(cuid())
+  userId       String
+  key          String
+  fingerprint  String
+  status       Int?
+  responseBody String?
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([createdAt])
 }
 
 /// A deleted row, so offline clients can drop it on their next

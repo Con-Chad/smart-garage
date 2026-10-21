@@ -1,6 +1,7 @@
 import { apiError, apiJson, requireApiAuth } from "@/lib/api/v1/http";
 import { resolveVehicleAccess } from "@/lib/vehicles/access";
 import { listSharesForVehicle } from "@/lib/repositories/vehicle-shares";
+import { createShare } from "@/lib/api/v1/mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -29,3 +30,5 @@ export async function GET(_request: Request, context: RouteContext) {
     })),
   });
 }
+
+export const POST = createShare;

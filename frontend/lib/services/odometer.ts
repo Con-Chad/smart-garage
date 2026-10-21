@@ -47,12 +47,13 @@ export async function getOdometerPageData(
  * in the history) but must never pull the current reading down — the same rule
  * the maintenance history follows.
  */
+/** Returns the new reading's id. */
 export async function logOdometerReading(input: {
   vehicleId: string;
   odometerKm: number;
   recordedAt?: Date;
   note?: string | null;
-}) {
+}): Promise<string> {
   const userId = await getCurrentUserId();
   const access = await resolveVehicleAccess(userId, input.vehicleId);
   if (!access?.canEdit) throw new Error("VEHICLE_NOT_FOUND");
@@ -63,7 +64,7 @@ export async function logOdometerReading(input: {
 
   const odometerKm = Math.round(input.odometerKm);
 
-  await createOdometerLogEntry({
+  const log = await createOdometerLogEntry({
     vehicleId: input.vehicleId,
     userId,
     odometerKm,
@@ -82,6 +83,8 @@ export async function logOdometerReading(input: {
       data: { currentOdometerKm: odometerKm },
     });
   }
+
+  return log.id;
 }
 
 export async function deleteOdometerReading(logId: string) {

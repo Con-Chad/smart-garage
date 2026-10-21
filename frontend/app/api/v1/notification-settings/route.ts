@@ -1,6 +1,7 @@
 import { apiJson, requireApiAuth } from "@/lib/api/v1/http";
 import { findNotificationSettings } from "@/lib/repositories/notifications";
 import { notificationSettingsToApi } from "@/lib/api/v1/settings";
+import { patchNotificationSettings } from "@/lib/api/v1/mutations";
 
 export const dynamic = "force-dynamic";
 
@@ -10,3 +11,5 @@ export async function GET() {
   if (!auth.ok) return auth.response;
   return apiJson(notificationSettingsToApi(await findNotificationSettings(auth.user.id)));
 }
+
+export const PATCH = patchNotificationSettings;

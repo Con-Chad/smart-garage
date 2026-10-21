@@ -115,3 +115,29 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
 - **D-032: Credentials stay server-side.** `/notification-settings` reports
   `pushoverConfigured`/`telegramConfigured` instead of the tokens, and
   documents never expose `storageKey`.
+- **D-033: `Idempotency-Key` header instead of a `clientId` field.**
+  Supersedes the mechanism in D-023. The app sends a UUID per queued write in
+  an `Idempotency-Key` header. Keys are scoped per user and kept for 7 days.
+  A retry of the same request replays the stored response, marked
+  `Idempotent-Replayed: true`, including a final 4xx. The same key with a
+  different body gets 422. 5xx releases the key. Multipart bodies are
+  fingerprinted by their parts, because clients pick a new boundary on each
+  attempt.
+  *Why:* it works the same way for every endpoint, including uploads and
+  DELETE, without adding a column to each table. A header is also the
+  convention clients already know (Stripe, the IETF draft).
+  *Concurrent edits:* last write wins for now. PATCH merges onto the stored
+  row, so it only changes the fields it sends. The conflict rule for edits
+  made offline is decided before CP11.
+- **D-034: API writes need a device token.** Reads also accept the web
+  session cookie so the API can be explored in a browser. Writes don't.
+  *Why:* `SameSite=Lax` treats sibling subdomains as same-site, so another
+  app on the same domain could otherwise submit a form-encoded or multipart
+  write with the user's cookie. The web UI uses server actions, never the API.
+- **D-035: The app's write surface.** Every entity the web UI edits has a
+  write endpoint. Exceptions: catalog-based vehicle setup, appearance
+  settings, credentials (Pushover/Telegram), backup import/export and admin
+  stay web-only. `POST /vehicles` is the web form's manual entry mode.
+  Deleting a schedule deactivates it, as in the web UI. Enabling a push
+  channel over the API requires its credentials to have been saved on the
+  web first, so the API never makes the network check the web form does.

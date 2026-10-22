@@ -208,6 +208,29 @@ describe("API v1 write endpoints", () => {
     expect(paths).toEqual(expect.arrayContaining(["totalCostCents", "filledAt"]));
   });
 
+  it("bounds vehicle numbers that would otherwise sync absurd values to every client (S-9)", async () => {
+    await as(owner.id);
+    const base = { make: "Toyota", model: "Tacoma", productionYear: 2021, currentOdometerKm: 1 };
+    const cases: Array<[string, Record<string, unknown>]> = [
+      ["productionYear", { productionYear: 99_999 }],
+      ["productionYear", { productionYear: 1800 }],
+      ["powerKw", { powerKw: 1_000_000 }],
+      ["powerPs", { powerPs: -1 }],
+      ["torqueNm", { torqueNm: 10 ** 9 }],
+      ["displacementCc", { displacementCc: 10 ** 12 }],
+    ];
+    for (const [field, override] of cases) {
+      const response = await createVehicle(jsonRequest("POST", "vehicles", { ...base, ...override }));
+      expect(response.status, field).toBe(422);
+      const paths = (await json(response)).error.issues.map((issue: Json) => issue.path);
+      expect(paths, field).toContain(field);
+    }
+    const ok = await createVehicle(
+      jsonRequest("POST", "vehicles", { ...base, powerKw: 150, powerPs: 204, torqueNm: 400, displacementCc: 2487 }),
+    );
+    expect(ok.status).toBe(201);
+  });
+
   describe("Idempotency-Key", () => {
     it("replays the stored response instead of writing twice", async () => {
       await as(owner.id);

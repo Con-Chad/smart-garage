@@ -1,16 +1,7 @@
-import { z } from "zod";
 import { apiError, apiJson, requireApiAuth } from "@/lib/api/v1/http";
-import { decodeCursor, encodeCursor, parseLimit } from "@/lib/api/v1/cursor";
+import { decodeCursor, encodeCursor, listCursorSchema, parseLimit } from "@/lib/api/v1/cursor";
 import { RESOURCES, type ResourceKey } from "@/lib/api/v1/resources";
 import { loadApiScope } from "@/lib/api/v1/scope";
-
-const listCursorSchema = z.object({
-  // Sort value of the last item: an ISO date or a number, tagged so dates
-  // round-trip as dates.
-  v: z.union([z.string(), z.number()]),
-  d: z.boolean(),
-  i: z.string().min(1),
-});
 
 /**
  * `GET /api/v1/<collection>?limit=&cursor=&<filter>=` — newest first (or the

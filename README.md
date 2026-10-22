@@ -47,7 +47,7 @@ Built for people who want a clean garage dashboard without handing their data to
 | 🎨 **Personal** | Dark/light mode, 9 design presets, custom background with adjustable blur |
 | 🌍 **Languages & units** | English & German · kilometres or **miles** · litres or **US gallons** · your currency |
 | 🧩 **Your fields** | Hide fields you don't need (HSN/TSN, VIN…) and add custom ones like tire size |
-| 👤 **Multi-user** | Open local registration, per-user data + sharing, optional **OIDC single sign-on** |
+| 👤 **Multi-user** | First account self-registers (admin), further accounts via admin or `REGISTRATION_ENABLED=true`; per-user data + sharing, optional **OIDC single sign-on** |
 | 📦 **Simple ops** | Single Docker image, SQLite on `/data`, no extra database container |
 
 ## 🖥️ Install
@@ -63,7 +63,7 @@ Smart Garage is available in the **Unraid Community Applications** store. No `do
    - **AppData** — default `/mnt/user/appdata/smart-garage` (database + uploads; created automatically)
    - **Upload limits** — optional, defaults are fine for most users
 4. Click **Apply**, then open the WebUI (or `http://<unraid-ip>:<port>/`).
-5. **Register** your account (first user becomes admin) and add your first vehicle.
+5. **Register** your account (first user becomes admin; `/register` then closes unless `REGISTRATION_ENABLED=true`) and add your first vehicle.
 
 **Updates:** Docker → **smart-garage** → **Force Update** (pulls `ghcr.io/flizzy27/smart-garage:latest`).
 

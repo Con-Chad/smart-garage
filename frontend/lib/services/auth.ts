@@ -8,6 +8,7 @@ import {
   setSessionCookie,
 } from "@/lib/auth/session";
 import { countUsers } from "@/lib/auth/current-user";
+import { registrationOpenFor } from "@/lib/auth/registration";
 import {
   newUserNotificationSettingsData,
   newUserPreferencesData,
@@ -19,11 +20,24 @@ function internalEmail(username: string) {
   return `${username.toLowerCase()}@smart-garage.local`;
 }
 
+/**
+ * Whether `/register` accepts new accounts right now: always for the very
+ * first account, afterwards only with `REGISTRATION_ENABLED=true` (D-043).
+ */
+export async function isRegistrationOpen(): Promise<boolean> {
+  return registrationOpenFor(await countUsers());
+}
+
 export async function registerUser(input: {
   username: string;
   password: string;
   displayName?: string;
 }) {
+  // Checked first so a closed server never reveals which usernames exist.
+  if (!(await isRegistrationOpen())) {
+    throw new Error("REGISTRATION_CLOSED");
+  }
+
   const username = input.username.trim().toLowerCase();
   if (!USERNAME_RE.test(username)) {
     throw new Error("INVALID_USERNAME");

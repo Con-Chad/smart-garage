@@ -23,14 +23,21 @@ import { findPreferencesForUser } from "@/lib/repositories/preferences";
 
 type DeviceContext = { params: Promise<{ deviceId: string }> };
 
-/** A user may trigger at most this many test pushes per device per window. */
+/** A user may trigger at most this many test pushes per device per window... */
 const TEST_PUSH_LIMIT = 3;
+/**
+ * ...and this many across all their devices, so registering more devices
+ * doesn't buy more probes of the push endpoint (S-8 in the 2026-10-22 audit).
+ */
+const TEST_PUSH_USER_LIMIT = 6;
 const TEST_PUSH_WINDOW_MS = 15 * 60 * 1000;
-// The limiter counts "failures"; here every attempt is recorded, so it is a plain attempt counter.
+// The limiters count "failures"; here every attempt is recorded, so they are plain attempt counters.
 const testPushThrottle = new FailureRateLimiter(TEST_PUSH_LIMIT, TEST_PUSH_WINDOW_MS);
+const testPushUserThrottle = new FailureRateLimiter(TEST_PUSH_USER_LIMIT, TEST_PUSH_WINDOW_MS);
 
 export function resetPushTestThrottleForTests(): void {
   testPushThrottle.clearAll();
+  testPushUserThrottle.clearAll();
 }
 
 async function assertOwnDevice(ctx: WriteContext, deviceId: string): Promise<void> {
@@ -89,13 +96,15 @@ export const testDevicePush = withDeviceId(async (ctx, deviceId) => {
     throw new ApiProblem(409, "push_not_registered", "This device has no push subscription");
   }
 
-  const decision = testPushThrottle.check(deviceId);
-  if (!decision.allowed) {
-    return apiError(429, "rate_limited", "Too many test pushes; try again later", {
-      headers: { "retry-after": String(decision.retryAfterSeconds) },
-    });
+  for (const decision of [testPushThrottle.check(deviceId), testPushUserThrottle.check(ctx.user.id)]) {
+    if (!decision.allowed) {
+      return apiError(429, "rate_limited", "Too many test pushes; try again later", {
+        headers: { "retry-after": String(decision.retryAfterSeconds) },
+      });
+    }
   }
   testPushThrottle.recordFailure(deviceId);
+  testPushUserThrottle.recordFailure(ctx.user.id);
 
   const locale = (await findPreferencesForUser(ctx.user.id)).locale;
   const result = await sendPushToDevice(
@@ -110,8 +119,17 @@ export const testDevicePush = withDeviceId(async (ctx, deviceId) => {
   );
 
   if (!result.ok) {
+    // The push service's response body stays in the server log: echoing it
+    // would make this endpoint a small read oracle against any public HTTPS
+    // host the device could register (S-8).
+    console.warn(`[push] test push to device ${deviceId} failed: ${result.error}`);
+    const message = result.dropped
+      ? "The push service no longer knows this subscription; register again"
+      : result.status != null
+        ? `The push service responded ${result.status}`
+        : "The push service could not be reached";
     return apiJson(
-      { error: { code: result.dropped ? "push_subscription_gone" : "push_failed", message: result.error } },
+      { error: { code: result.dropped ? "push_subscription_gone" : "push_failed", message }, status: result.status ?? null },
       { status: 502 },
     );
   }

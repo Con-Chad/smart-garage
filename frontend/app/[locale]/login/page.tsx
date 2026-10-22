@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { getOidcConfig } from "@/lib/auth/oidc";
+import { isRegistrationOpen } from "@/lib/services/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,18 @@ export default async function LoginPage({ params, searchParams }: Props) {
     startParams.set("next", from);
   }
 
+  let registrationOpen = false;
+  try {
+    registrationOpen = await isRegistrationOpen();
+  } catch {
+    // Database unavailable: the login form still renders; the link is just hidden.
+  }
+
   return (
     <LoginForm
       sessionExpired={sessionExpired === "1"}
       errorCode={error ?? null}
+      registrationOpen={registrationOpen}
       oidc={
         oidcConfig
           ? {

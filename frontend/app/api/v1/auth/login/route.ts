@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { API_VERSION, apiError, apiJson, readJsonBody } from "@/lib/api/v1/http";
 import { verifyCredentials } from "@/lib/services/auth";
-import { createApiDevice } from "@/lib/repositories/api-devices";
+import { DeviceLimitReachedError, createApiDevice } from "@/lib/repositories/api-devices";
 import {
   LoginRateLimitedError,
   assertLoginAllowed,
@@ -56,11 +56,23 @@ export async function POST(request: Request) {
   }
   recordLoginSuccess(address, username);
 
-  const { device, token } = await createApiDevice({
-    userId: user.id,
-    name: deviceName || "Mobile device",
-    userAgent: request.headers.get("user-agent"),
-  });
+  let device, token;
+  try {
+    ({ device, token } = await createApiDevice({
+      userId: user.id,
+      name: deviceName || "Mobile device",
+      userAgent: request.headers.get("user-agent"),
+    }));
+  } catch (error) {
+    if (error instanceof DeviceLimitReachedError) {
+      return apiError(
+        409,
+        "device_limit_reached",
+        `This account already has ${error.limit} active devices; revoke one under Settings → Mobile devices and sign in again`,
+      );
+    }
+    throw error;
+  }
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
   return apiJson(

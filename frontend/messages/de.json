@@ -1134,6 +1134,8 @@
     "loginSubtitle": "Melden Sie sich mit Benutzername und Passwort an",
     "registerTitle": "Konto erstellen",
     "registerSubtitle": "Wähle einen Benutzernamen und ein Passwort — deine Garage, deine Daten.",
+    "registrationClosedTitle": "Registrierung geschlossen",
+    "registrationClosed": "Diese Smart Garage nimmt keine neuen Konten an. Bitte den Administrator, ein Konto für dich anzulegen.",
     "username": "Benutzername",
     "usernameHint": "3–32 Zeichen, Buchstaben, Zahlen, _ und -",
     "displayName": "Anzeigename",
@@ -1159,7 +1161,8 @@
       "failed": "Aktion fehlgeschlagen",
       "oidc": "Die Single-Sign-on-Anmeldung ist fehlgeschlagen. Bitte erneut versuchen oder Benutzername und Passwort verwenden.",
       "accountDisabled": "Dieses Konto ist deaktiviert. Bitte einen Administrator um Freischaltung.",
-      "oidcSignupDisabled": "Zu dieser Identität gehört kein Konto, und die automatische Kontoerstellung ist deaktiviert."
+      "oidcSignupDisabled": "Zu dieser Identität gehört kein Konto, und die automatische Kontoerstellung ist deaktiviert.",
+      "registrationClosed": "Die Registrierung ist auf diesem Server deaktiviert."
     },
     "or": "oder",
     "signInWith": "Mit {provider} anmelden"

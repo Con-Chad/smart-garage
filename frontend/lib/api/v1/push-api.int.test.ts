@@ -236,6 +236,52 @@ describe("API v1 push subscriptions", () => {
     expect((await pushState(tablet.id)).pushEndpoint).toBeNull();
   });
 
+  it("never echoes the push service's response body, and throttles test pushes per user too (S-8)", async () => {
+    const watch = await (async () => {
+      const { device, token } = await createApiDevice({ userId: alice.id, name: "Watch" });
+      return { id: device.id, token };
+    })();
+    const subscribe = async (device: { id: string; token: string }) => {
+      request.headers = new Headers({ authorization: `Bearer ${device.token}` });
+      await putPush(jsonRequest("PUT", `devices/${device.id}/push`, makeSubscription()), params(device.id));
+    };
+    await subscribe(phone);
+    await subscribe(tablet);
+    await subscribe(watch);
+
+    useBearer(phone.token);
+    fetchMock.mockResolvedValue(new Response("secret-body-from-target 0xDEADBEEF", { status: 500 }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const failed = await testPush(jsonRequest("POST", `devices/${phone.id}/push/test`), params(phone.id));
+    expect(failed.status).toBe(502);
+    const text = await failed.text();
+    expect(text).not.toContain("secret-body");
+    expect(text).not.toContain("DEADBEEF");
+    expect(JSON.parse(text)).toMatchObject({ error: { code: "push_failed", message: "The push service responded 500" }, status: 500 });
+    expect(warn.mock.calls.some((call) => String(call[0]).includes("secret-body"))).toBe(true);
+    warn.mockRestore();
+
+    // Per device: 3 per window. Per user: 6 per window across all devices, so a
+    // third device does not buy a seventh probe.
+    fetchMock.mockResolvedValue(new Response(null, { status: 201 }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      expect((await testPush(jsonRequest("POST", `devices/${phone.id}/push/test`), params(phone.id))).status).toBe(200);
+    }
+    useBearer(tablet.token);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect((await testPush(jsonRequest("POST", `devices/${tablet.id}/push/test`), params(tablet.id))).status).toBe(200);
+    }
+    useBearer(watch.token);
+    const seventh = await testPush(jsonRequest("POST", `devices/${watch.id}/push/test`), params(watch.id));
+    expect(seventh.status).toBe(429);
+    expect((await json(seventh)).error.code).toBe("rate_limited");
+
+    // Another user is unaffected.
+    useBearer(bobPhone.token);
+    await putPush(jsonRequest("PUT", `devices/${bobPhone.id}/push`, makeSubscription()), params(bobPhone.id));
+    expect((await testPush(jsonRequest("POST", `devices/${bobPhone.id}/push/test`), params(bobPhone.id))).status).toBe(200);
+  });
+
   it("removes a subscription on DELETE", async () => {
     useBearer(phone.token);
     await putPush(jsonRequest("PUT", `devices/${phone.id}/push`, makeSubscription()), params(phone.id));

@@ -10,12 +10,32 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 
-export function RegisterForm() {
+export function RegisterForm({ closed = false }: { closed?: boolean }) {
   const t = useTranslations("auth");
   const [state, formAction, pending] = useActionState<
     AuthActionResult | null,
     FormData
   >(registerAction, null);
+
+  if (closed) {
+    return (
+      <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AppLogo showName={false} size="lg" />
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold text-foreground">{t("registrationClosedTitle")}</h1>
+          </div>
+        </div>
+        <Alert variant="info">{t("registrationClosed")}</Alert>
+        <p className="text-center text-sm text-muted-foreground">
+          {t("hasAccount")}{" "}
+          <Link href="/login" className="font-medium text-accent hover:underline">
+            {t("loginLink")}
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm">

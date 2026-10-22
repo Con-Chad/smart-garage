@@ -1134,6 +1134,8 @@
     "loginSubtitle": "Use your username and password",
     "registerTitle": "Create account",
     "registerSubtitle": "Pick a username and password — your garage, your data.",
+    "registrationClosedTitle": "Registration is closed",
+    "registrationClosed": "This Smart Garage does not accept new accounts. Ask the administrator to create one for you.",
     "username": "Username",
     "usernameHint": "3–32 characters, letters, numbers, _ and -",
     "displayName": "Display name",
@@ -1159,7 +1161,8 @@
       "failed": "Action failed",
       "oidc": "Single sign-on failed. Please try again or use your username and password.",
       "accountDisabled": "This account is disabled. Ask an administrator to re-enable it.",
-      "oidcSignupDisabled": "No account is linked to this identity, and automatic sign-up is switched off."
+      "oidcSignupDisabled": "No account is linked to this identity, and automatic sign-up is switched off.",
+      "registrationClosed": "Registration is closed on this server."
     },
     "or": "or",
     "signInWith": "Sign in with {provider}"

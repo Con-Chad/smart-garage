@@ -12,6 +12,30 @@ const LAST_USED_RESOLUTION_MS = 60 * 1000;
 const MAX_DEVICE_NAME_LENGTH = 80;
 const MAX_USER_AGENT_LENGTH = 200;
 
+/**
+ * Active (not revoked) devices one account may hold. Every `/auth/login`
+ * mints a permanent token, so without a cap a leaked password or a looping
+ * client could pile up credentials forever (S-7 in the 2026-10-22 audit).
+ * `MAX_DEVICES_PER_USER` overrides; the user frees a slot by revoking a
+ * device under Settings → Mobile devices.
+ */
+export const DEFAULT_MAX_DEVICES_PER_USER = 20;
+
+export function maxDevicesPerUser(env: Record<string, string | undefined> = process.env): number {
+  const raw = Number.parseInt((env.MAX_DEVICES_PER_USER ?? "").trim(), 10);
+  return Number.isFinite(raw) && raw >= 1 ? raw : DEFAULT_MAX_DEVICES_PER_USER;
+}
+
+export class DeviceLimitReachedError extends Error {
+  constructor(readonly limit: number) {
+    super("DEVICE_LIMIT_REACHED");
+  }
+}
+
+export async function countActiveDevicesForUser(userId: string): Promise<number> {
+  return withDbRetry(() => prisma.apiDevice.count({ where: { userId, revokedAt: null } }));
+}
+
 export type ApiDeviceSummary = {
   id: string;
   name: string;
@@ -55,12 +79,21 @@ function toSummary(row: {
   return { ...rest, pushSubscribed: pushEndpoint != null };
 }
 
-/** Creates a device and returns the plaintext token — the only time it exists. */
+/**
+ * Creates a device and returns the plaintext token — the only time it exists.
+ * Throws `DeviceLimitReachedError` once the account holds `maxDevicesPerUser()`
+ * active devices.
+ */
 export async function createApiDevice(input: {
   userId: string;
   name: string;
   userAgent?: string | null;
 }): Promise<{ device: ApiDeviceSummary; token: string }> {
+  const limit = maxDevicesPerUser();
+  if ((await countActiveDevicesForUser(input.userId)) >= limit) {
+    throw new DeviceLimitReachedError(limit);
+  }
+
   const token = generateDeviceToken();
   const device = await withDbRetry(() =>
     prisma.apiDevice.create({

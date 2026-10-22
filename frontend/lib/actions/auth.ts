@@ -37,6 +37,7 @@ function mapAuthError(error: unknown): string {
     if (error.message === "PASSWORD_TOO_SHORT") return "passwordTooShort";
     if (error.message === "USERNAME_TAKEN") return "usernameTaken";
     if (error.message === "INVALID_CREDENTIALS") return "invalidCredentials";
+    if (error.message === "REGISTRATION_CLOSED") return "registrationClosed";
   }
   return "failed";
 }

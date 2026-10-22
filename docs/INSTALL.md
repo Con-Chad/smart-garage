@@ -12,7 +12,7 @@ Production guide for self-hosters.
 
 1. Install via **Unraid Apps** (search *Smart Garage*) — see [UNRAID.md](./UNRAID.md) — or [Docker below](#docker-linux-nas-homelab)
 2. Open the web UI
-3. **Register** your account (first user = admin)
+3. **Register** your account (first user = admin; afterwards `/register` is closed unless `REGISTRATION_ENABLED=true`)
 4. Add a vehicle and start logging data
 
 No default password is shipped. No demo data is created in production.
@@ -41,6 +41,8 @@ Or from this repo: `docker compose up -d` (see [docker-compose.yml](../docker-co
 | `MAX_UPLOAD_SIZE_MB` | `25` | Document upload limit |
 | `MAX_IMAGE_SIZE_MB` | `10` | Vehicle image limit |
 | `NODE_ENV` | `production` | Do not change |
+| `REGISTRATION_ENABLED` | `false` | Allow self-registration at `/register` after the first account exists. The first account (admin) can always be created; afterwards admins add accounts under User management |
+| `MAX_DEVICES_PER_USER` | `20` | Active mobile-app devices (API tokens) per account; further logins get `409 device_limit_reached` until one is revoked in Settings → Mobile devices |
 | `SESSION_COOKIE_SECURE` | unset | Session cookie `Secure` flag — see below |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | unset | Optional single sign-on — see [OIDC.md](./OIDC.md) |
 | `TANKERKOENIG_API_KEY` | unset | Optional live fuel prices. Can also be set in the app under Settings → Fuel prices — see [FUEL-PRICES.md](./FUEL-PRICES.md) |

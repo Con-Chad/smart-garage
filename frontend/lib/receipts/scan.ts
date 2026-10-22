@@ -9,7 +9,7 @@ import {
   ReceiptExtractionError,
   type ReceiptExtractor,
 } from "@/lib/receipts/extract";
-import { countScansToday, secondsUntilNextUtcDay } from "@/lib/receipts/quota";
+import { releaseScanSlot, reserveScanSlot, secondsUntilNextUtcDay } from "@/lib/receipts/quota";
 import { createVehicleFileDocument } from "@/lib/repositories/documents";
 import { findPreferencesForUser } from "@/lib/repositories/preferences";
 import { saveVehicleDocument } from "@/lib/storage/local";
@@ -25,8 +25,9 @@ import { sniffMimeType } from "@/lib/storage/sniff";
  *
  * Order of checks: device token (401) → feature on (404, D-030: a disabled
  * feature is indistinguishable from a missing route) → multipart (415/400) →
- * vehicle visible and editable (404/403) → daily limit (429) → image type and
- * size (415/413) → save → extract (502 on provider trouble).
+ * vehicle visible and editable (404/403) → image type and size (415/413) →
+ * daily limit (429, reserved atomically before anything is saved or billed,
+ * see `reserveScanSlot`) → save → extract (502 on provider trouble).
  */
 
 /**
@@ -59,17 +60,6 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
       }
       assertCanEditVehicle(ctx.scope, vehicleId);
 
-      const at = now();
-      const used = await countScansToday(ctx.user.id, at);
-      if (used >= config.dailyLimit) {
-        return apiError(
-          429,
-          "rate_limited",
-          `The receipt scanner allows ${config.dailyLimit} scans per day; try again tomorrow (UTC)`,
-          { headers: { "retry-after": String(secondsUntilNextUtcDay(at)) } },
-        );
-      }
-
       const file = form.get("file");
       if (!(file instanceof File) || file.size === 0) {
         throw new ApiProblem(422, "validation_failed", "Send the photo in a multipart field named \"file\"");
@@ -88,30 +78,41 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
         );
       }
 
-      const saved = await saveVehicleDocument(vehicleId, file);
-      const document = await createVehicleFileDocument({
-        vehicleId,
-        uploadedByUserId: ctx.user.id,
-        file: saved,
-        purpose: "RECEIPT",
-      });
+      const at = now();
+      const slot = await reserveScanSlot({ userId: ctx.user.id, vehicleId, limit: config.dailyLimit, now: at });
+      if (!slot) {
+        return apiError(
+          429,
+          "rate_limited",
+          `The receipt scanner allows ${config.dailyLimit} scans per day; try again tomorrow (UTC)`,
+          { headers: { "retry-after": String(secondsUntilNextUtcDay(at)) } },
+        );
+      }
 
       const extractor =
         deps.extractor ??
         claudeVisionExtractor({ apiKey: config.apiKey ?? "", model: config.model, effort: config.effort });
 
-      const scan = await prisma.receiptScan.create({
-        data: {
-          userId: ctx.user.id,
+      let document: { id: string };
+      try {
+        const saved = await saveVehicleDocument(vehicleId, file);
+        document = await createVehicleFileDocument({
           vehicleId,
-          documentId: document.id,
-          outcome: "pending",
-          model: extractor.model,
-        },
-        select: { id: true },
-      });
+          uploadedByUserId: ctx.user.id,
+          file: saved,
+          purpose: "RECEIPT",
+        });
+        await prisma.receiptScan.update({
+          where: { id: slot.id },
+          data: { documentId: document.id, model: extractor.model },
+        });
+      } catch (error) {
+        // Nothing was sent to the provider, so the slot goes back.
+        await releaseScanSlot(slot.id).catch(() => {});
+        throw error;
+      }
       const finish = (outcome: string) =>
-        prisma.receiptScan.update({ where: { id: scan.id }, data: { outcome } });
+        prisma.receiptScan.update({ where: { id: slot.id }, data: { outcome } });
 
       let raw;
       try {
@@ -142,7 +143,7 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
         draft: result.draft,
         warnings: result.warnings,
         model: extractor.model,
-        scansRemainingToday: Math.max(0, config.dailyLimit - used - 1),
+        scansRemainingToday: Math.max(0, config.dailyLimit - slot.used),
       });
     });
 }

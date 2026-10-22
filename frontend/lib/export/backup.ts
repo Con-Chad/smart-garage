@@ -1,11 +1,17 @@
-import type { Prisma } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { DocumentCategory, DocumentPurpose, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { APP_VERSION } from "@/lib/app-version";
 import {
   deleteStoredFile,
+  extensionForMime,
   readStoredFile,
   restoreStoredFile,
+  sanitizeOriginalFilename,
 } from "@/lib/storage/local";
+import { ALLOWED_DOCUMENT_MIME_TYPES } from "@/lib/storage/paths";
+import { contentMatchesMimeType } from "@/lib/storage/sniff";
 
 const BACKUP_FORMAT = "smart-garage-user-backup";
 /**
@@ -61,6 +67,104 @@ function intOrNull(value: unknown): number | null {
 
 function jsonOrUndefined(value: unknown): Prisma.InputJsonValue | undefined {
   return value == null ? undefined : (value as Prisma.InputJsonValue);
+}
+
+function invalidBackup(): never {
+  throw new Error("INVALID_BACKUP");
+}
+
+/** Ids that end up in storage paths must be plain tokens (cuid/uuid shaped). */
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+function safeId(value: unknown): string {
+  const id = String(value ?? "");
+  if (!SAFE_ID_RE.test(id)) invalidBackup();
+  return id;
+}
+
+/**
+ * A backup may only reference rows it carries itself. Vehicles are re-created
+ * under the importing user, so a child row naming any other vehicle id would
+ * land on someone else's vehicle (the FK alone does not stop that).
+ */
+function assertOwnRef(value: unknown, own: Set<string>, options: { nullable?: boolean } = {}) {
+  const ref = textOrNull(value);
+  if (ref == null) {
+    if (options.nullable) return;
+    invalidBackup();
+  }
+  if (!own.has(ref)) invalidBackup();
+}
+
+function enumValue<T extends Record<string, string>>(values: T, value: unknown): T[keyof T] {
+  const text = String(value);
+  if (!Object.values(values).includes(text)) invalidBackup();
+  return text as T[keyof T];
+}
+
+/** Everything a restored document row needs, with the storage key decided by the server. */
+type PlannedDocument = {
+  source: JsonRecord;
+  vehicleId: string | null;
+  purpose: DocumentPurpose;
+  category: DocumentCategory | null;
+  mimeType: string;
+  storageKey: string;
+  originalFilename: string;
+  sizeBytes: bigint;
+  file: Buffer | null;
+};
+
+function planDocument(
+  userId: string,
+  document: JsonRecord,
+  own: { vehicles: Set<string>; records: Set<string>; expenses: Set<string>; fuelEntries: Set<string> },
+): PlannedDocument {
+  const vehicleId = textOrNull(document.vehicleId);
+  assertOwnRef(vehicleId, own.vehicles, { nullable: true });
+  assertOwnRef(document.maintenanceRecordId, own.records, { nullable: true });
+  assertOwnRef(document.expenseId, own.expenses, { nullable: true });
+  assertOwnRef(document.fuelEntryId, own.fuelEntries, { nullable: true });
+
+  const purpose = enumValue(DocumentPurpose, document.purpose ?? "OTHER");
+  const category = document.category == null ? null : enumValue(DocumentCategory, document.category);
+  const mimeType = textOrNull(document.mimeType) ?? "application/octet-stream";
+
+  // The file's own bytes decide whether it is restored, never the JSON's
+  // declared type or key (D-043).
+  let file: Buffer | null = null;
+  if (typeof document.fileBase64 === "string") {
+    if (!ALLOWED_DOCUMENT_MIME_TYPES.has(mimeType)) invalidBackup();
+    file = Buffer.from(document.fileBase64, "base64");
+    if (!contentMatchesMimeType(file, mimeType)) invalidBackup();
+  }
+
+  const filename = `${randomUUID()}${extensionForMime(mimeType) || ".bin"}`;
+  const storageKey =
+    vehicleId == null
+      ? path.posix.join("users", userId, "documents", filename)
+      : purpose === "VEHICLE_IMAGE"
+        ? path.posix.join("vehicles", vehicleId, filename)
+        : path.posix.join("vehicles", vehicleId, "documents", filename);
+
+  return {
+    source: document,
+    vehicleId,
+    purpose,
+    category,
+    mimeType,
+    storageKey,
+    originalFilename: sanitizeOriginalFilename(document.originalFilename),
+    sizeBytes: file ? BigInt(file.length) : bigintOrZero(document.sizeBytes),
+    file,
+  };
+}
+
+/** A background key from the file is only kept when it is under this user's own folder. */
+function ownBackgroundKey(userId: string, value: unknown): string | null {
+  const key = textOrNull(value);
+  if (!key || key.includes("..") || !key.startsWith(`users/${userId}/`)) return null;
+  return key;
 }
 
 async function documentWithFile(document: {
@@ -205,6 +309,45 @@ export async function importUserBackup(userId: string, backup: unknown) {
     ? (data.customFields as JsonRecord[])
     : [];
 
+  // Cross-check every reference before touching the database, so a bad file
+  // is rejected whole and the user's existing data stays as it was.
+  const own = {
+    vehicles: new Set(vehicles.map((vehicle) => safeId(vehicle.id))),
+    schedules: new Set(
+      vehicles.flatMap((vehicle) =>
+        ((vehicle.maintenanceSchedules as JsonRecord[] | undefined) ?? []).map((s) => String(s.id)),
+      ),
+    ),
+    records: new Set(maintenanceRecords.map((record) => String(record.id))),
+    expenses: new Set(expenses.map((expense) => String(expense.id))),
+    fuelEntries: new Set(fuelEntries.map((entry) => String(entry.id))),
+    noteTags: new Set(noteTags.map((tag) => String(tag.id))),
+  };
+  for (const record of maintenanceRecords) {
+    assertOwnRef(record.vehicleId, own.vehicles);
+    assertOwnRef(record.scheduleId, own.schedules, { nullable: true });
+  }
+  for (const expense of expenses) {
+    assertOwnRef(expense.vehicleId, own.vehicles);
+    assertOwnRef(expense.maintenanceRecordId, own.records, { nullable: true });
+  }
+  for (const entry of fuelEntries) assertOwnRef(entry.vehicleId, own.vehicles);
+  for (const log of odometerLogs) assertOwnRef(log.vehicleId, own.vehicles);
+  for (const field of customFields) {
+    for (const value of (field.values as JsonRecord[] | undefined) ?? []) {
+      assertOwnRef(value.vehicleId, own.vehicles);
+    }
+  }
+  for (const note of notes) {
+    assertOwnRef(note.vehicleId, own.vehicles, { nullable: true });
+    assertOwnRef(note.maintenanceRecordId, own.records, { nullable: true });
+    for (const tagId of Array.isArray(note.tagIds) ? note.tagIds : []) {
+      assertOwnRef(tagId, own.noteTags);
+    }
+  }
+  for (const item of wishlistItems) assertOwnRef(item.vehicleId, own.vehicles, { nullable: true });
+  const plannedDocuments = documents.map((document) => planDocument(userId, document, own));
+
   const oldDocuments = await prisma.document.findMany({
     where: {
       OR: [{ uploadedByUserId: userId }, { vehicle: { ownerUserId: userId } }],
@@ -230,6 +373,7 @@ export async function importUserBackup(userId: string, backup: unknown) {
 
     const preferences = data.preferences as JsonRecord | null | undefined;
     if (preferences) {
+      const backgroundImageKey = ownBackgroundKey(userId, preferences.backgroundImageKey);
       await tx.userPreferences.upsert({
         where: { userId },
         create: {
@@ -243,8 +387,8 @@ export async function importUserBackup(userId: string, backup: unknown) {
           hiddenVehicleFields: String(preferences.hiddenVehicleFields ?? ""),
           designPreset: String(preferences.designPreset ?? "default"),
           backgroundBlurPx: intOrNull(preferences.backgroundBlurPx) ?? 8,
-          backgroundImageKey: textOrNull(preferences.backgroundImageKey),
-          backgroundMimeType: textOrNull(preferences.backgroundMimeType),
+          backgroundImageKey: backgroundImageKey,
+          backgroundMimeType: backgroundImageKey ? textOrNull(preferences.backgroundMimeType) : null,
           quickFuelEnabled: Boolean(preferences.quickFuelEnabled ?? true),
           maintenanceDueSoonKm: intOrNull(preferences.maintenanceDueSoonKm) ?? 1500,
           maintenanceDueSoonDays:
@@ -260,8 +404,8 @@ export async function importUserBackup(userId: string, backup: unknown) {
           hiddenVehicleFields: String(preferences.hiddenVehicleFields ?? ""),
           designPreset: String(preferences.designPreset ?? "default"),
           backgroundBlurPx: intOrNull(preferences.backgroundBlurPx) ?? 8,
-          backgroundImageKey: textOrNull(preferences.backgroundImageKey),
-          backgroundMimeType: textOrNull(preferences.backgroundMimeType),
+          backgroundImageKey: backgroundImageKey,
+          backgroundMimeType: backgroundImageKey ? textOrNull(preferences.backgroundMimeType) : null,
           quickFuelEnabled: Boolean(preferences.quickFuelEnabled ?? true),
           maintenanceDueSoonKm: intOrNull(preferences.maintenanceDueSoonKm) ?? 1500,
           maintenanceDueSoonDays:
@@ -608,22 +752,24 @@ export async function importUserBackup(userId: string, backup: unknown) {
       });
     }
 
-    for (const document of documents) {
+    for (const planned of plannedDocuments) {
+      const document = planned.source;
       await tx.document.create({
         data: {
           id: String(document.id),
           uploadedByUserId: userId,
-          vehicleId: textOrNull(document.vehicleId),
+          vehicleId: planned.vehicleId,
           maintenanceRecordId: textOrNull(document.maintenanceRecordId),
           expenseId: textOrNull(document.expenseId),
-          purpose: String(document.purpose ?? "OTHER") as never,
-          category: textOrNull(document.category) as never,
+          fuelEntryId: textOrNull(document.fuelEntryId),
+          purpose: planned.purpose,
+          category: planned.category,
           title: textOrNull(document.title),
-          originalFilename: String(document.originalFilename ?? "file"),
-          storageKey: String(document.storageKey),
-          storageBackend: textOrNull(document.storageBackend) ?? "local",
-          mimeType: String(document.mimeType ?? "application/octet-stream"),
-          sizeBytes: bigintOrZero(document.sizeBytes),
+          originalFilename: planned.originalFilename,
+          storageKey: planned.storageKey,
+          storageBackend: "local",
+          mimeType: planned.mimeType,
+          sizeBytes: planned.sizeBytes,
           width: intOrNull(document.width),
           height: intOrNull(document.height),
           sha256: textOrNull(document.sha256),
@@ -745,12 +891,9 @@ export async function importUserBackup(userId: string, backup: unknown) {
 
   await Promise.all(oldDocuments.map((doc) => deleteStoredFile(doc.storageKey)));
   await Promise.all(
-    documents.map(async (document) => {
-      if (typeof document.fileBase64 !== "string") return;
-      await restoreStoredFile(
-        String(document.storageKey),
-        Buffer.from(document.fileBase64, "base64"),
-      );
+    plannedDocuments.map(async (planned) => {
+      if (!planned.file) return;
+      await restoreStoredFile(planned.storageKey, planned.file);
     }),
   );
 

@@ -106,7 +106,7 @@ export const notePatchSchema = noteFieldsSchema.partial();
 export const vehicleCreateSchema = z.object({
   make: z.string().trim().min(1).max(80),
   model: z.string().trim().min(1).max(80),
-  productionYear: z.number().int(),
+  productionYear: z.number().int().min(1900).max(2100),
   currentOdometerKm: km,
   licensePlate: text(20).nullable().optional(),
   vin: text(17).nullable().optional(),
@@ -117,10 +117,10 @@ export const vehicleCreateSchema = z.object({
   fuelType: z.nativeEnum(FuelType).nullable().optional(),
   bodyType: z.nativeEnum(BodyType).nullable().optional(),
   driveType: z.nativeEnum(DriveType).nullable().optional(),
-  powerKw: z.number().int().nullable().optional(),
-  powerPs: z.number().int().nullable().optional(),
-  torqueNm: z.number().int().nullable().optional(),
-  displacementCc: z.number().int().nullable().optional(),
+  powerKw: z.number().int().min(0).max(5000).nullable().optional(),
+  powerPs: z.number().int().min(0).max(7000).nullable().optional(),
+  torqueNm: z.number().int().min(0).max(20_000).nullable().optional(),
+  displacementCc: z.number().int().min(0).max(50_000).nullable().optional(),
   engineDescription: text(200).nullable().optional(),
 });
 

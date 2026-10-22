@@ -43,7 +43,7 @@ We aim to acknowledge within **7 days**.
 
 ## Application security
 
-- Open registration is intentional (local/trusted networks); restrict network access if needed
+- Self-registration is closed once the first (admin) account exists; set `REGISTRATION_ENABLED=true` to reopen it on trusted networks
 - Passwords stored with **scrypt** + per-user salt
 - Sessions stored server-side; HTTP-only cookie
 - Upload MIME types and sizes validated server-side

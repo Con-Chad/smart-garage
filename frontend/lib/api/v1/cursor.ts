@@ -19,6 +19,46 @@ export function decodeCursor<T>(raw: string, schema: z.ZodType<T>): T | null {
   }
 }
 
+/**
+ * Timestamps inside cursors must parse to a real date: `new Date("garbage")`
+ * is an `Invalid Date`, which Prisma rejects with a thrown error (a 500)
+ * rather than an empty result. Clients can edit cursors, so check here and
+ * answer 400 `invalid_cursor` (S-4 in the 2026-10-22 audit).
+ */
+export const cursorTimestamp = z
+  .string()
+  .max(40)
+  .refine((value) => !Number.isNaN(new Date(value).getTime()), { message: "Expected an ISO 8601 timestamp" });
+
+/** `GET /api/v1/<collection>?cursor=`: sort value of the last item plus its id. */
+export const listCursorSchema = z
+  .object({
+    // Sort value of the last item: an ISO date or a number, tagged so dates
+    // round-trip as dates.
+    v: z.union([z.string(), z.number()]),
+    d: z.boolean(),
+    i: z.string().min(1).max(64),
+  })
+  .refine(
+    (cursor) =>
+      cursor.d ? cursorTimestamp.safeParse(cursor.v).success : typeof cursor.v === "number",
+    { message: "Sort value does not match its type tag" },
+  );
+
+/** `GET /api/v1/sync?cursor=`: where a sync session is and what it has emitted. */
+export const syncCursorSchema = z.object({
+  v: z.literal(1),
+  /** Lower bound (ISO) or null for a full sync. */
+  s: cursorTimestamp.nullable(),
+  /** Session snapshot time (ISO). */
+  t: cursorTimestamp,
+  f: z.boolean(),
+  /** Resource index and last (updatedAt, id) emitted within it. */
+  e: z.number().int().min(0),
+  u: cursorTimestamp.nullable(),
+  i: z.string().min(1).max(64).nullable(),
+});
+
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 200;
 

@@ -81,13 +81,13 @@ export async function sendPushToDevice(
   subscription: DevicePushSubscription,
   payload: PushPayload,
   options: SendPushOptions = {},
-): Promise<{ ok: true } | { ok: false; error: string; dropped: boolean }> {
+): Promise<{ ok: true } | { ok: false; error: string; dropped: boolean; status: number | null }> {
   // Re-check at send time so a host that was public when registered can't
   // be re-pointed (DNS rebinding) at something internal later.
   const endpoint = await validatePushEndpoint(subscription.endpoint);
   if (!endpoint.ok) {
     await clearDevicePushSubscription(subscription.deviceId);
-    return { ok: false, error: `endpoint rejected: ${endpoint.reason}`, dropped: true };
+    return { ok: false, error: `endpoint rejected: ${endpoint.reason}`, dropped: true, status: null };
   }
 
   const keys = await getOrCreateVapidKeys();
@@ -100,15 +100,15 @@ export async function sendPushToDevice(
 
   if (result.gone) {
     await clearDevicePushSubscription(subscription.deviceId);
-    return { ok: false, error: result.error, dropped: true };
+    return { ok: false, error: result.error, dropped: true, status: result.status };
   }
 
   const failures = await recordPushFailure(subscription.deviceId);
   if (result.status === 507 && failures >= MAX_FAILURES_BEFORE_507_DROP) {
     await clearDevicePushSubscription(subscription.deviceId);
-    return { ok: false, error: `${result.error} (no subscriber, removed)`, dropped: true };
+    return { ok: false, error: `${result.error} (no subscriber, removed)`, dropped: true, status: result.status };
   }
-  return { ok: false, error: result.error, dropped: false };
+  return { ok: false, error: result.error, dropped: false, status: result.status };
 }
 
 /** Sends to every subscribed, active device of the user. */

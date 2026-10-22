@@ -271,6 +271,30 @@ describe("POST /api/v1/fuel/receipt-scan", () => {
     expect((await limited(upload({ vehicleId: freshVehicle }, file))).status).toBe(200);
   });
 
+  it("never admits more concurrent scans than the limit, and frees rejected slots (S-5)", async () => {
+    const racer = await createUser();
+    const racerVehicle = (await createVehicle(racer.id)).id;
+    await as(racer.id);
+    const extractor = fakeExtractor();
+    const limited = createReceiptScanHandler({ extractor, config: () => ({ ...enabled, dailyLimit: 3 }) });
+    const file = { bytes: JPEG, name: "r.jpg", type: "image/jpeg" };
+
+    const responses = await Promise.all(
+      Array.from({ length: 10 }, () => limited(upload({ vehicleId: racerVehicle }, file))),
+    );
+    const statuses = responses.map((r) => r.status);
+    const admitted = statuses.filter((s) => s === 200).length;
+    expect(admitted).toBeGreaterThanOrEqual(1);
+    expect(admitted).toBeLessThanOrEqual(3);
+    expect(statuses.filter((s) => s === 429).length).toBe(10 - admitted);
+    expect(extractor.calls).toBe(admitted);
+
+    // Over-limit attempts leave no rows and no documents behind.
+    expect(await prisma.receiptScan.count({ where: { userId: racer.id } })).toBe(admitted);
+    expect(await prisma.receiptScan.count({ where: { userId: racer.id, outcome: "pending" } })).toBe(0);
+    expect(await prisma.document.count({ where: { vehicleId: racerVehicle } })).toBe(admitted);
+  });
+
   it("answers 502 with the saved documentId when the provider fails, and never leaks its error", async () => {
     await as(owner.id);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

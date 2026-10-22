@@ -14,12 +14,15 @@ export function LoginForm({
   sessionExpired = false,
   oidc = null,
   errorCode = null,
+  registrationOpen = true,
 }: {
   sessionExpired?: boolean;
   /** Present only when OIDC is configured via environment variables. */
   oidc?: { label: string; startUrl: string } | null;
   /** Error handed back by the OIDC callback redirect. */
   errorCode?: string | null;
+  /** False hides the register link (`REGISTRATION_ENABLED` unset and an account exists). */
+  registrationOpen?: boolean;
 }) {
   const t = useTranslations("auth");
   const [state, formAction, pending] = useActionState<
@@ -118,12 +121,14 @@ export function LoginForm({
         </Button>
       </form>
 
-      <p className="text-center text-sm text-muted-foreground">
-        {t("noAccount")}{" "}
-        <Link href="/register" className="font-medium text-accent hover:underline">
-          {t("registerLink")}
-        </Link>
-      </p>
+      {registrationOpen ? (
+        <p className="text-center text-sm text-muted-foreground">
+          {t("noAccount")}{" "}
+          <Link href="/register" className="font-medium text-accent hover:underline">
+            {t("registerLink")}
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

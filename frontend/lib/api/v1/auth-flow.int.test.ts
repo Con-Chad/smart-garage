@@ -166,6 +166,31 @@ describe("API v1 device-token auth", () => {
     expect((await me()).status).toBe(401);
   });
 
+  it("caps active devices per account and frees a slot on revocation (S-7)", async () => {
+    await createAccount("carol");
+    process.env.MAX_DEVICES_PER_USER = "2";
+    try {
+      const first = await loginAs("carol", "Phone 1");
+      await loginAs("carol", "Phone 2");
+
+      const third = await login(loginRequest({ username: "carol", password: PASSWORD, deviceName: "Phone 3" }));
+      expect(third.status).toBe(409);
+      const body = await third.json();
+      expect(body.error.code).toBe("device_limit_reached");
+      expect(body.error.message).toContain("2 active devices");
+      expect(body).not.toHaveProperty("token");
+      expect(await prisma.apiDevice.count({ where: { user: { username: "carol" } } })).toBe(2);
+
+      // Revoking one (here: via logout) makes room again.
+      useBearer(first.token);
+      expect((await logout()).status).toBe(204);
+      await loginAs("carol", "Phone 3");
+      expect(await prisma.apiDevice.count({ where: { user: { username: "carol" }, revokedAt: null } })).toBe(2);
+    } finally {
+      delete process.env.MAX_DEVICES_PER_USER;
+    }
+  });
+
   it("revokes the current device on logout", async () => {
     const { token } = await loginAs("bob");
     useBearer(token);

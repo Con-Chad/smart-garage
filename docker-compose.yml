@@ -25,6 +25,9 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - RECEIPT_SCANNER_MODEL=${RECEIPT_SCANNER_MODEL:-claude-sonnet-5-5}
       - RECEIPT_SCANNER_DAILY_LIMIT=${RECEIPT_SCANNER_DAILY_LIMIT:-30}
+      # Self-registration at /register after the first (admin) account exists.
+      # Off by default; admins create accounts under User management.
+      - REGISTRATION_ENABLED=${REGISTRATION_ENABLED:-false}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]

@@ -2,6 +2,7 @@ import { setRequestLocale } from "next-intl/server";
 import { redirect } from "next/navigation";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { isRegistrationOpen } from "@/lib/services/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +23,7 @@ export default async function RegisterPage({ params }: Props) {
     redirect(`/${locale}`);
   }
 
-  return <RegisterForm />;
+  // The form is only shown while registration is open (first account, or
+  // REGISTRATION_ENABLED=true); the server action re-checks on submit.
+  return <RegisterForm closed={!(await isRegistrationOpen())} />;
 }

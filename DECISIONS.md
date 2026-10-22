@@ -229,3 +229,53 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   `Document.fuelEntryId` is added with `ALTER TABLE … ADD COLUMN` instead of
   Prisma's table rebuild so the `sync_tombstones` triggers on `Document`
   survive; drift-checked with `prisma migrate diff --exit-code`.
+
+## Security hardening (audit 2026-10-22)
+
+- **D-043: Server findings S-1…S-9 of the 2026-10-22 audit, and the
+  `REGISTRATION_ENABLED` default.** *Backup import (S-1, High):* a backup may
+  only reference rows it carries. Every `vehicleId`/`scheduleId`/
+  `maintenanceRecordId`/`expenseId`/`fuelEntryId`/tag id in the file is checked
+  against the file's own sets *before* the transaction, so a bad file deletes
+  nothing. Vehicle ids must be plain tokens (`[A-Za-z0-9_-]{1,64}`) because
+  they become storage paths. Document `storageKey`s from the file are never
+  used: the server regenerates `vehicles/<id>/documents/<uuid><ext>`
+  (`vehicles/<id>/<uuid><ext>` for `VEHICLE_IMAGE`, `users/<me>/documents/…`
+  for unattached documents), `purpose`/`category` are whitelisted against the
+  Prisma enums, `mimeType` must be in the upload allow-list and the restored
+  bytes must sniff as that type or the import is rejected whole. A
+  `backgroundImageKey` is kept only when it is under `users/<me>/`. Original
+  file names are stripped of control characters and capped at 255 (also for
+  uploads). *Login throttle (S-2):* a third limiter keyed on the username
+  alone (30 failures / 15 min) sits beside the per-address and
+  per-address+account ones; the header-derived address can be forged by a
+  direct-to-origin caller, so it only narrows the lockout for honest clients.
+  *Self-registration (S-3):* `REGISTRATION_ENABLED` defaults to **false**;
+  `/register` still works while the user table is empty (first-run bootstrap,
+  that account becomes admin), afterwards it shows "registration is closed"
+  and `registerUser` throws `REGISTRATION_CLOSED` before any username lookup
+  (no enumeration). The login page hides the register link when closed. *Why
+  false:* upstream's open registration was the precondition for S-1 and for
+  burning the receipt-scanner budget from the LAN; household accounts come
+  from the admin's User management, which already exists. *Cursors (S-4):*
+  timestamps inside list/sync cursors must parse (`cursorTimestamp`) and the
+  list sort value must match its type tag, so a tampered cursor is a 400
+  `invalid_cursor` instead of a Prisma 500. *Scanner limit (S-5):* the slot is
+  reserved first — the pending `ReceiptScan` row is inserted, then the day's
+  rows are counted; `count > limit` releases the row and answers 429. The last
+  inserter always sees every earlier row, so concurrency can never exceed the
+  limit (it can over-reject in a true tie, which the retry absorbs). The
+  reservation carries `createdAt = now` so the count is deterministic. *Device
+  cap (S-7):* `MAX_DEVICES_PER_USER` (default 20) active devices per account;
+  `/api/v1/auth/login` answers 409 `device_limit_reached` beyond that rather
+  than silently revoking an older device the user may still use. Token expiry
+  stays a follow-up (needs a column → migration). *Test push (S-8):* the push
+  service's response body is logged, not echoed; clients get only
+  `status`/`gone`. A per-user limiter (6 / 15 min) sits beside the per-device
+  one (3 / 15 min). *Bounds (S-9):* `productionYear` 1900–2100, `powerKw`
+  0–5000, `powerPs` 0–7000, `torqueNm` 0–20000, `displacementCc` 0–50000,
+  document `vehicleId`/`maintenanceRecordId` ≤ 64 chars. No migration was
+  needed for any of this. Deferred with reasons in `security-handoff.md`:
+  S-6 (session token hashing — migration + invalidates sessions), S-10
+  (proxy body limit), S-11 (secrets at rest — operator decision), S-12
+  (public health stats — upstream), S-13 (security headers — Cloudflare).

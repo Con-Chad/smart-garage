@@ -17,7 +17,23 @@ export type SavedFile = {
   sizeBytes: bigint;
 };
 
-function extensionForMime(mimeType: string): string {
+/** Longest original file name kept; anything past it is noise in `Content-Disposition`. */
+const MAX_ORIGINAL_FILENAME_LENGTH = 255;
+
+/**
+ * File names come from the client (`file.name`) or a backup file. Keep them
+ * printable and bounded: control characters are stripped and the result is
+ * cut to 255 characters, with "file" as the fallback for an empty name.
+ */
+export function sanitizeOriginalFilename(name: unknown): string {
+  const cleaned = String(name ?? "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, MAX_ORIGINAL_FILENAME_LENGTH);
+  return cleaned || "file";
+}
+
+export function extensionForMime(mimeType: string): string {
   switch (mimeType) {
     case "image/jpeg":
       return ".jpg";
@@ -60,7 +76,7 @@ async function saveFileToStorage(
 
   return {
     storageKey,
-    originalFilename: file.name,
+    originalFilename: sanitizeOriginalFilename(file.name),
     mimeType: file.type,
     sizeBytes: BigInt(file.size),
   };

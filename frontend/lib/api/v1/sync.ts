@@ -1,6 +1,6 @@
-import { z } from "zod";
+import type { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { decodeCursor, encodeCursor } from "@/lib/api/v1/cursor";
+import { decodeCursor, encodeCursor, syncCursorSchema } from "@/lib/api/v1/cursor";
 import {
   RESOURCES,
   RESOURCE_KEYS,
@@ -30,19 +30,6 @@ export const SYNC_RETENTION_DAYS = 90;
 const OVERLAP_MS = 5000;
 export const DEFAULT_SYNC_PAGE_SIZE = 500;
 export const MAX_SYNC_PAGE_SIZE = 1000;
-
-const syncCursorSchema = z.object({
-  v: z.literal(1),
-  /** Lower bound (ISO) or null for a full sync. */
-  s: z.string().nullable(),
-  /** Session snapshot time (ISO). */
-  t: z.string(),
-  f: z.boolean(),
-  /** Resource index and last (updatedAt, id) emitted within it. */
-  e: z.number().int().min(0),
-  u: z.string().nullable(),
-  i: z.string().nullable(),
-});
 
 type SyncCursor = z.infer<typeof syncCursorSchema>;
 

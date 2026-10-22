@@ -71,6 +71,7 @@ export async function saveNotificationSettings(input: NotificationSettingsInput)
     telegramEnabled: input.telegramEnabled,
     telegramBotToken: input.telegramBotToken?.trim() || null,
     telegramChatId: input.telegramChatId?.trim() || null,
+    mobilePushEnabled: input.mobilePushEnabled,
     eventMaintenanceOverdue: input.eventMaintenanceOverdue,
     eventMaintenanceDueSoon: input.eventMaintenanceDueSoon,
     eventMaintenanceLogged: input.eventMaintenanceLogged,
@@ -112,6 +113,7 @@ export async function testAllNotificationChannels(
     title,
     message,
     telegramHtml,
+    push: { type: "test", url: "/" },
   });
 
   if (result.sentChannels.length === 0) {
@@ -257,11 +259,18 @@ async function sendMaintenanceDueAlerts(
   const message = lines.join("\n");
   const telegramText = `<b>${title}</b>\n${lines.join("\n")}`;
 
+  const vehicleIds = new Set(matched.map((item) => item.vehicleId));
   const result = await dispatchToEnabledChannels(settings, {
     title,
     message,
     telegramHtml: telegramText,
     priority: matched.some((item) => item.dueStatus === "OVERDUE") ? 1 : 0,
+    push: {
+      type: "maintenance_due",
+      url: "/maintenance",
+      vehicleId: vehicleIds.size === 1 ? matched[0]!.vehicleId : undefined,
+      scheduleId: matched.length === 1 ? matched[0]!.id : undefined,
+    },
   });
 
   if (result.sentChannels.length === 0) return;
@@ -308,6 +317,11 @@ async function sendOdometerReminder(
     title,
     message,
     telegramHtml: `<b>${title}</b>\n${message}`,
+    push: {
+      type: "odometer_reminder",
+      url: "/odometer",
+      vehicleId: vehicles.length === 1 ? vehicles[0]!.id : undefined,
+    },
   });
 
   if (result.sentChannels.length === 0) return;
@@ -350,6 +364,7 @@ export async function notifyMaintenanceLogged(
     title,
     message,
     telegramHtml: `<b>${title}</b>\n${message}`,
+    push: { type: "maintenance_logged", url: "/maintenance" },
   });
 }
 
@@ -382,6 +397,7 @@ export async function notifyExpenseAdded(
     title,
     message,
     telegramHtml: `<b>${title}</b>\n${message}`,
+    push: { type: "expense_added", url: "/expenses" },
   });
 }
 

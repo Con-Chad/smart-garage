@@ -141,3 +141,64 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   Deleting a schedule deactivates it, as in the web UI. Enabling a push
   channel over the API requires its credentials to have been saved on the
   web first, so the API never makes the network check the web form does.
+
+## Push (CP6)
+
+- **D-036: Web Push (RFC 8291/8292) rather than a plaintext ntfy POST.**
+  The server never talks to ntfy as ntfy; it talks Web Push to whatever
+  endpoint the app's UnifiedPush distributor hands out. The message is
+  encrypted end-to-end with the subscription's `p256dh`/`auth` keys
+  (`aes128gcm`) and the request is signed with the server's VAPID key, so
+  ntfy.sh (or any other distributor, including a self-hosted one later)
+  relays ciphertext it cannot read, and the app can verify who sent it.
+  *Why no `web-push` package:* the whole transport is ~120 lines of
+  `node:crypto` (ECDH, HKDF, AES-GCM, ES256), which avoids a dependency with
+  five transitive packages, keeps the image free of native modules, and is
+  verified in tests against an independent decryptor written from the RFC.
+  This supersedes the "`web-push` package" note in D-022.
+- **D-037: Subscriptions live on `ApiDevice`.** `pushEndpoint`, `pushP256dh`,
+  `pushAuth`, `pushCreatedAt`, `pushFailedAt`, `pushFailureCount` are
+  nullable columns on the device row (additive migration). A device may only
+  manage its own subscription over `PUT/DELETE /devices/{id}/push`: another
+  user's device is 404 (hidden), the caller's other device 403 (D-030). All
+  three push endpoints need a device token (D-034). Registering the same
+  endpoint and keys again is a no-op; a new endpoint replaces the old one
+  and resets the failure record. Revoking a device ends its push with it.
+- **D-038: The VAPID key pair is generated once and stored in `AppSetting`**
+  (`push.vapidPublicKey` / `push.vapidPrivateKey`), not read from env. A
+  self-hoster never handles key material, and the pair survives restarts and
+  image updates because it lives in the database. Two concurrent first calls
+  race on the primary key and the loser adopts the winner's pair.
+  `GET /api/v1/push/vapid` returns the public key. There is no rotation UI:
+  rotating would invalidate every subscription. `PUSH_VAPID_SUBJECT`
+  optionally sets the JWT `sub` contact (`mailto:` or `https:`).
+- **D-039: Endpoint SSRF rules.** The server POSTs to a client-supplied URL,
+  so the URL must be `https:` on port 443, without credentials or fragment,
+  and its host must not be `localhost`/`.local`/`.internal`/`.lan`/a bare
+  name, an IP literal in a private, loopback, link-local (incl.
+  169.254.169.254), CGNAT, multicast or reserved range, or a name that
+  resolves to one (every A/AAAA answer is checked; IPv4-mapped, NAT64 and
+  6to4 forms are unwrapped). The check runs at registration **and again
+  before every send**, so DNS rebinding after registration doesn't help.
+  ntfy.sh, Mozilla autopush and any public UnifiedPush distributor pass.
+  `UNIFIEDPUSH_ALLOW_PRIVATE_ENDPOINTS=true` (D-022) relaxes the address and
+  port rules for a LAN-hosted distributor but keeps `https:`.
+- **D-040: Cleanup and backoff.** 404 and 410 from the push service remove
+  the subscription immediately; the test endpoint reports this as
+  `push_subscription_gone` so the app re-registers. Any other failure stamps
+  `pushFailedAt` and increments `pushFailureCount`; the device is then
+  skipped for 15 min × 2^(n−1), capped at 24 h, and a 507 (ntfy: nobody is
+  subscribed to the topic) on the third consecutive failure removes the
+  subscription. A success resets the counter. The user-triggered test push
+  ignores the backoff and is limited to 3 per device per 15 minutes.
+- **D-041: Channel semantics.** "Mobile app (UnifiedPush)" is a third
+  channel inside `dispatchToEnabledChannels`, so it inherits events,
+  thresholds, delivery windows, quiet hours and the minimum interval
+  unchanged. `mobilePushEnabled` defaults to **on** (the user already chose
+  to install the app); the channel counts as enabled only while at least
+  one active device has a subscription, so a user without the app sees no
+  change in behaviour and the worker skips them as before. Every subscribed
+  device of the user gets the message. The payload is small JSON
+  (`type`, `title`, `body`, optional `vehicleId`/`scheduleId`, `url`) with
+  nothing the notification text doesn't already say — no tokens, no
+  credentials, no amounts beyond the text.

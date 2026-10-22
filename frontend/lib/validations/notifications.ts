@@ -13,6 +13,7 @@ export const notificationSettingsSchema = z.object({
   telegramEnabled: z.coerce.boolean(),
   telegramBotToken: z.string().trim().max(128).optional().nullable(),
   telegramChatId: z.string().trim().max(64).optional().nullable(),
+  mobilePushEnabled: z.coerce.boolean(),
   eventMaintenanceOverdue: z.coerce.boolean(),
   eventMaintenanceDueSoon: z.coerce.boolean(),
   eventMaintenanceLogged: z.coerce.boolean(),

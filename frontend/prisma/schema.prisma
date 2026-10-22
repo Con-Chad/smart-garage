@@ -258,6 +258,15 @@ model ApiDevice {
   lastUsedAt  DateTime?
   revokedAt   DateTime?
 
+  /// Web Push subscription the app registered through its UnifiedPush
+  /// distributor (RFC 8291 keys). All null until `PUT /devices/{id}/push`.
+  pushEndpoint     String?
+  pushP256dh       String?
+  pushAuth         String?
+  pushCreatedAt    DateTime?
+  pushFailedAt     DateTime?
+  pushFailureCount Int       @default(0)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -346,6 +355,9 @@ model UserNotificationSettings {
   telegramEnabled         Boolean   @default(false)
   telegramBotToken        String?
   telegramChatId          String?
+  /// Web Push to the mobile app's registered devices; only effective while
+  /// at least one active device has a push subscription.
+  mobilePushEnabled       Boolean   @default(true)
   eventMaintenanceOverdue Boolean   @default(true)
   eventMaintenanceDueSoon Boolean   @default(true)
   eventMaintenanceLogged  Boolean   @default(false)

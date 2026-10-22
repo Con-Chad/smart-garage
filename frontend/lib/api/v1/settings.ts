@@ -24,6 +24,7 @@ export function preferencesToApi(preferences: UserSettings) {
 export function notificationSettingsToApi(settings: NotificationSettingsRecord | null) {
   if (!settings) return null;
   const {
+    userId: _userId,
     pushoverUserKey,
     pushoverAppToken,
     telegramBotToken,

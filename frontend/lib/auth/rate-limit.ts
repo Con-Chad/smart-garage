@@ -37,6 +37,11 @@ export class FailureRateLimiter {
     this.failures.delete(key);
   }
 
+  /** Forgets every key (tests). */
+  clearAll(): void {
+    this.failures.clear();
+  }
+
   private prune(key: string): number[] {
     const cutoff = this.now() - this.windowMs;
     const recent = (this.failures.get(key) ?? []).filter((t) => t > cutoff);

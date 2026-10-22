@@ -163,6 +163,7 @@ export const preferencesPatchSchema = z.object({
 export const notificationSettingsPatchSchema = z.object({
   pushoverEnabled: z.boolean().optional(),
   telegramEnabled: z.boolean().optional(),
+  mobilePushEnabled: z.boolean().optional(),
   eventMaintenanceOverdue: z.boolean().optional(),
   eventMaintenanceDueSoon: z.boolean().optional(),
   eventMaintenanceLogged: z.boolean().optional(),
@@ -178,6 +179,15 @@ export const notificationSettingsPatchSchema = z.object({
   quietHoursStart: hhmm.nullable().optional(),
   quietHoursEnd: hhmm.nullable().optional(),
   timezone: z.string().refine(isValidTimezone, { message: "Unknown IANA timezone" }).optional(),
+});
+
+/** `PUT /devices/{id}/push`: the subscription as the UnifiedPush/Web Push client reports it. */
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().min(1).max(2048),
+  keys: z.object({
+    p256dh: z.string().min(1).max(128),
+    auth: z.string().min(1).max(64),
+  }),
 });
 
 /** Bodies passed through to a service that validates them itself. */

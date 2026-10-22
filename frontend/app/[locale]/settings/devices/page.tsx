@@ -47,7 +47,18 @@ export default async function DevicesSettingsPage({ params }: Props) {
                       <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
                         {t("revokedBadge")}
                       </span>
-                    ) : null}
+                    ) : device.pushSubscribed ? (
+                      <span
+                        className="ml-2 rounded bg-success/10 px-1.5 py-0.5 text-xs font-normal text-success"
+                        title={device.pushFailedAt ? t("pushFailing") : undefined}
+                      >
+                        {device.pushFailedAt ? t("pushFailingBadge") : t("pushOnBadge")}
+                      </span>
+                    ) : (
+                      <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                        {t("pushOffBadge")}
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     <code>{device.tokenPrefix}…</code>

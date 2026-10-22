@@ -324,6 +324,9 @@
         "telegramChannelHint": "Messages via Telegram bot",
         "telegramBotToken": "Bot token",
         "telegramChatId": "Chat ID",
+        "mobilePushEnabled": "Mobile app (UnifiedPush)",
+        "mobilePushChannelHint": "Push to the Smart Garage app on your phone through its UnifiedPush distributor (for example ntfy). Nothing to configure here — the app registers itself.",
+        "mobilePushDevices": "{count, plural, =0 {No device is registered for push yet. Sign in with the app and allow notifications.} one {# device is registered for push.} other {# devices are registered for push.}}",
         "eventMaintenanceOverdue": "Maintenance overdue",
         "eventMaintenanceOverdueHint": "When a service is past its due date or mileage",
         "eventMaintenanceDueSoon": "Maintenance due soon",
@@ -388,7 +391,11 @@
         "neverUsed": "never used",
         "revokedAt": "revoked {date}",
         "revokedBadge": "Revoked",
-        "revoke": "Revoke"
+        "revoke": "Revoke",
+        "pushOnBadge": "Push on",
+        "pushOffBadge": "No push",
+        "pushFailingBadge": "Push failing",
+        "pushFailing": "The last push to this device failed; it will be retried."
       },
       "vehicleFields": {
         "title": "Vehicle fields",

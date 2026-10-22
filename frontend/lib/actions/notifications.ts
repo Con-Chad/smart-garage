@@ -27,6 +27,7 @@ function parseSettingsForm(formData: FormData) {
     telegramEnabled: formData.get("telegramEnabled") === "on",
     telegramBotToken: formData.get("telegramBotToken") || null,
     telegramChatId: formData.get("telegramChatId") || null,
+    mobilePushEnabled: formData.get("mobilePushEnabled") === "on",
     eventMaintenanceOverdue: formData.get("eventMaintenanceOverdue") === "on",
     eventMaintenanceDueSoon: formData.get("eventMaintenanceDueSoon") === "on",
     eventMaintenanceLogged: formData.get("eventMaintenanceLogged") === "on",

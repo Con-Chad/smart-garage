@@ -20,6 +20,10 @@ export type ApiDeviceSummary = {
   createdAt: Date;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
+  /** Whether the device registered a push subscription; the endpoint itself stays private. */
+  pushSubscribed: boolean;
+  pushCreatedAt: Date | null;
+  pushFailedAt: Date | null;
 };
 
 const summarySelect = {
@@ -30,7 +34,26 @@ const summarySelect = {
   createdAt: true,
   lastUsedAt: true,
   revokedAt: true,
+  pushEndpoint: true,
+  pushCreatedAt: true,
+  pushFailedAt: true,
 } as const;
+
+function toSummary(row: {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  userAgent: string | null;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  revokedAt: Date | null;
+  pushEndpoint: string | null;
+  pushCreatedAt: Date | null;
+  pushFailedAt: Date | null;
+}): ApiDeviceSummary {
+  const { pushEndpoint, ...rest } = row;
+  return { ...rest, pushSubscribed: pushEndpoint != null };
+}
 
 /** Creates a device and returns the plaintext token — the only time it exists. */
 export async function createApiDevice(input: {
@@ -52,7 +75,7 @@ export async function createApiDevice(input: {
       select: summarySelect,
     }),
   );
-  return { device, token };
+  return { device: toSummary(device), token };
 }
 
 /** Resolves an active (not revoked) device and its user from a plaintext token. */
@@ -90,13 +113,163 @@ export async function touchApiDeviceLastUsed(deviceId: string): Promise<void> {
 }
 
 export async function listApiDevicesForUser(userId: string): Promise<ApiDeviceSummary[]> {
-  return withDbRetry(() =>
+  const rows = await withDbRetry(() =>
     prisma.apiDevice.findMany({
       where: { userId },
       select: summarySelect,
       orderBy: [{ revokedAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
     }),
   );
+  return rows.map(toSummary);
+}
+
+// ─── Push subscriptions ──────────────────────────────────────────────────
+
+export type DevicePushSubscription = {
+  deviceId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  createdAt: Date;
+  failedAt: Date | null;
+  failureCount: number;
+};
+
+const pushSelect = {
+  id: true,
+  pushEndpoint: true,
+  pushP256dh: true,
+  pushAuth: true,
+  pushCreatedAt: true,
+  pushFailedAt: true,
+  pushFailureCount: true,
+} as const;
+
+function toPushSubscription(row: {
+  id: string;
+  pushEndpoint: string | null;
+  pushP256dh: string | null;
+  pushAuth: string | null;
+  pushCreatedAt: Date | null;
+  pushFailedAt: Date | null;
+  pushFailureCount: number;
+}): DevicePushSubscription | null {
+  if (!row.pushEndpoint || !row.pushP256dh || !row.pushAuth || !row.pushCreatedAt) return null;
+  return {
+    deviceId: row.id,
+    endpoint: row.pushEndpoint,
+    p256dh: row.pushP256dh,
+    auth: row.pushAuth,
+    createdAt: row.pushCreatedAt,
+    failedAt: row.pushFailedAt,
+    failureCount: row.pushFailureCount,
+  };
+}
+
+/** Who owns a device, for the 404-vs-403 decision; null when it doesn't exist or is revoked. */
+export async function findActiveDeviceOwner(deviceId: string): Promise<{ userId: string } | null> {
+  const row = await withDbRetry(() =>
+    prisma.apiDevice.findUnique({ where: { id: deviceId }, select: { userId: true, revokedAt: true } }),
+  );
+  return row && !row.revokedAt ? { userId: row.userId } : null;
+}
+
+export async function findDevicePushSubscription(deviceId: string): Promise<DevicePushSubscription | null> {
+  const row = await withDbRetry(() =>
+    prisma.apiDevice.findUnique({ where: { id: deviceId }, select: pushSelect }),
+  );
+  return row ? toPushSubscription(row) : null;
+}
+
+/**
+ * Stores or replaces a device's subscription. Re-registering the same
+ * endpoint and keys is a no-op that keeps `pushCreatedAt`; anything else
+ * starts fresh with a clean failure record.
+ */
+export async function setDevicePushSubscription(
+  deviceId: string,
+  input: { endpoint: string; p256dh: string; auth: string },
+): Promise<DevicePushSubscription> {
+  const existing = await findDevicePushSubscription(deviceId);
+  if (
+    existing &&
+    existing.endpoint === input.endpoint &&
+    existing.p256dh === input.p256dh &&
+    existing.auth === input.auth
+  ) {
+    return existing;
+  }
+  const row = await withDbRetry(() =>
+    prisma.apiDevice.update({
+      where: { id: deviceId },
+      data: {
+        pushEndpoint: input.endpoint,
+        pushP256dh: input.p256dh,
+        pushAuth: input.auth,
+        pushCreatedAt: new Date(),
+        pushFailedAt: null,
+        pushFailureCount: 0,
+      },
+      select: pushSelect,
+    }),
+  );
+  return toPushSubscription(row)!;
+}
+
+/** Removes a device's subscription. Returns false when there was none. */
+export async function clearDevicePushSubscription(deviceId: string): Promise<boolean> {
+  const result = await withDbRetry(() =>
+    prisma.apiDevice.updateMany({
+      where: { id: deviceId, pushEndpoint: { not: null } },
+      data: {
+        pushEndpoint: null,
+        pushP256dh: null,
+        pushAuth: null,
+        pushCreatedAt: null,
+        pushFailedAt: null,
+        pushFailureCount: 0,
+      },
+    }),
+  );
+  return result.count > 0;
+}
+
+/** Every active device of a user that can receive push. */
+export async function listPushSubscriptionsForUser(userId: string): Promise<DevicePushSubscription[]> {
+  const rows = await withDbRetry(() =>
+    prisma.apiDevice.findMany({
+      where: { userId, revokedAt: null, pushEndpoint: { not: null } },
+      select: pushSelect,
+      orderBy: { createdAt: "asc" },
+    }),
+  );
+  return rows.map(toPushSubscription).filter((row): row is DevicePushSubscription => row != null);
+}
+
+export async function countPushSubscriptionsForUser(userId: string): Promise<number> {
+  return withDbRetry(() =>
+    prisma.apiDevice.count({ where: { userId, revokedAt: null, pushEndpoint: { not: null } } }),
+  );
+}
+
+export async function recordPushDelivery(deviceId: string): Promise<void> {
+  await withDbRetry(() =>
+    prisma.apiDevice.updateMany({
+      where: { id: deviceId, pushEndpoint: { not: null } },
+      data: { pushFailedAt: null, pushFailureCount: 0 },
+    }),
+  );
+}
+
+export async function recordPushFailure(deviceId: string): Promise<number> {
+  const row = await withDbRetry(() =>
+    prisma.apiDevice.update({
+      where: { id: deviceId },
+      data: { pushFailedAt: new Date(), pushFailureCount: { increment: 1 } },
+      select: { pushFailureCount: true },
+    }),
+  );
+  return row.pushFailureCount;
 }
 
 /** Revokes one of the user's own devices. Returns false if it isn't theirs. */

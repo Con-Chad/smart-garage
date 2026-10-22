@@ -7,7 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Push notifications to the mobile app (UnifiedPush)** — a third
+  notification channel next to Pushover and Telegram. The Android app
+  registers a Web Push subscription from its UnifiedPush distributor
+  (ntfy, for example); the server encrypts every message end-to-end
+  (RFC 8291 `aes128gcm`) and signs it with a VAPID key it generates and
+  keeps itself, so the distributor only ever relays ciphertext and there is
+  nothing to configure on the web. **Settings → Notifications** shows the
+  channel with the number of registered devices; **Settings → Mobile
+  devices** shows which device has push. Dead subscriptions are removed
+  automatically. New API endpoints: `PUT/DELETE /api/v1/devices/{id}/push`,
+  `POST /api/v1/devices/{id}/push/test`, `GET /api/v1/push/vapid`.
 
 ## [0.13.0] - 2026-08-07
 

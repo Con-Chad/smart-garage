@@ -20,6 +20,8 @@ const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 
 type Props = {
   initial: NotificationSettingsRecord | null;
+  /** Active mobile devices that registered for push. */
+  pushDeviceCount: number;
 };
 
 function ToggleRow({
@@ -82,7 +84,7 @@ function SectionCard({
   );
 }
 
-export function NotificationSettings({ initial }: Props) {
+export function NotificationSettings({ initial, pushDeviceCount }: Props) {
   const t = useTranslations("pages.settings.notifications");
   const tDays = useTranslations("pages.settings.notifications.days");
   const { settings: userSettings } = useUserSettings();
@@ -135,6 +137,18 @@ export function NotificationSettings({ initial }: Props) {
         <input type="hidden" name="eventExpenseAdded" value="off" />
 
         <SectionCard title={t("channelsTitle")} description={t("channelsDescription")}>
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-4">
+            <ToggleRow
+              id="mobilePushEnabled"
+              label={t("mobilePushEnabled")}
+              description={t("mobilePushChannelHint")}
+              defaultChecked={initial?.mobilePushEnabled ?? true}
+            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              {t("mobilePushDevices", { count: pushDeviceCount })}
+            </p>
+          </div>
+
           <details className="rounded-lg border border-border bg-muted/20" open={initial?.pushoverEnabled ?? false}>
             <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-foreground">
               <span className="inline-flex w-full items-center justify-between gap-3">

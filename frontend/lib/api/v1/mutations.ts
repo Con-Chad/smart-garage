@@ -40,7 +40,7 @@ import { defaultsToItemInputs, serializeMaintenanceItem } from "@/lib/repositori
 import {
   findNotificationSettings,
   upsertNotificationSettings,
-  type NotificationSettingsRecord,
+  type NotificationSettingsData,
 } from "@/lib/repositories/notifications";
 import { findPreferencesForUser, upsertPreferencesForUser } from "@/lib/repositories/preferences";
 import {
@@ -674,11 +674,6 @@ export const patchPreferences = write(async (ctx) => {
   return apiJson(preferencesToApi(await findPreferencesForUser(ctx.user.id)));
 });
 
-type NotificationSettingsData = Omit<
-  NotificationSettingsRecord,
-  "lastMaintenanceAlertAt" | "lastOdometerReminderAt"
->;
-
 /** Column defaults from the schema, for a user who never opened the settings page. */
 function defaultNotificationSettings(timezone: string): NotificationSettingsData {
   return {
@@ -688,6 +683,7 @@ function defaultNotificationSettings(timezone: string): NotificationSettingsData
     telegramEnabled: false,
     telegramBotToken: null,
     telegramChatId: null,
+    mobilePushEnabled: true,
     eventMaintenanceOverdue: true,
     eventMaintenanceDueSoon: true,
     eventMaintenanceLogged: false,
@@ -715,7 +711,7 @@ export const patchNotificationSettings = write(async (ctx) => {
   const patch = await jsonBody(ctx, notificationSettingsPatchSchema);
   const existing = await findNotificationSettings(ctx.user.id);
   const base: NotificationSettingsData = existing
-    ? (({ lastMaintenanceAlertAt: _a, lastOdometerReminderAt: _b, ...rest }) => rest)(existing)
+    ? (({ userId: _u, mobilePushDevices: _d, lastMaintenanceAlertAt: _a, lastOdometerReminderAt: _b, ...rest }) => rest)(existing)
     : defaultNotificationSettings((await findPreferencesForUser(ctx.user.id)).timezone);
   const next = { ...base, ...defined(patch) } as NotificationSettingsData;
 

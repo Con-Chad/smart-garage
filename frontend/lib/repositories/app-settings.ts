@@ -11,6 +11,9 @@ import { withDbRetry } from "@/lib/db/retry";
 
 export const APP_SETTING_KEYS = {
   tankerkoenigApiKey: "fuelPrices.tankerkoenigApiKey",
+  /** Server VAPID key pair for Web Push (generated once, see lib/notifications/push/vapid.ts). */
+  vapidPublicKey: "push.vapidPublicKey",
+  vapidPrivateKey: "push.vapidPrivateKey",
 } as const;
 
 export type AppSettingKey =

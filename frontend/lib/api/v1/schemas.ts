@@ -28,6 +28,8 @@ export const fuelCreateSchema = z.object({
   currency: currency.optional(),
   stationName: text(120).nullable().optional(),
   note: text(500).nullable().optional(),
+  /** A RECEIPT document of the same vehicle (from `/fuel/receipt-scan`) to attach to the new entry. */
+  receiptDocumentId: id.nullable().optional(),
 });
 
 export const expenseCreateSchema = z.object({

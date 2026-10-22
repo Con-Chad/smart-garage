@@ -291,7 +291,7 @@ const documents = define({
     }),
   toApi: (row) => row,
   listOrder: { field: "createdAt", direction: "desc" },
-  filters: ["vehicleId", "maintenanceRecordId", "expenseId"],
+  filters: ["vehicleId", "maintenanceRecordId", "expenseId", "fuelEntryId"],
 });
 
 const inspections = define({

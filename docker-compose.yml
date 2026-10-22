@@ -17,6 +17,14 @@ services:
       # a week). It can also be entered in Settings -> Fuel prices instead.
       # See docs/FUEL-PRICES.md.
       - TANKERKOENIG_API_KEY=${TANKERKOENIG_API_KEY:-}
+      # Optional: fuel-receipt scanner for the mobile app. Off unless
+      # RECEIPT_SCANNER_ENABLED=true and an Anthropic API key are set; receipt
+      # photos are then sent to the Anthropic API (billed to your Console
+      # account). See docs/mobile/RECEIPT-SCANNER.md.
+      - RECEIPT_SCANNER_ENABLED=${RECEIPT_SCANNER_ENABLED:-false}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - RECEIPT_SCANNER_MODEL=${RECEIPT_SCANNER_MODEL:-claude-sonnet-5-5}
+      - RECEIPT_SCANNER_DAILY_LIMIT=${RECEIPT_SCANNER_DAILY_LIMIT:-30}
       - NODE_ENV=production
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]

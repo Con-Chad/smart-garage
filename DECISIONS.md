@@ -202,3 +202,30 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   (`type`, `title`, `body`, optional `vehicleId`/`scheduleId`, `url`) with
   nothing the notification text doesn't already say — no tokens, no
   credentials, no amounts beyond the text.
+
+## Receipt scanner (fork feature, post-v1)
+
+- **D-042: Receipt scanner, server side.** Implements D-012 as specified in
+  `docs/mobile/RECEIPT-SCANNER.md`. *Off by default* (`RECEIPT_SCANNER_ENABLED`
+  + `ANTHROPIC_API_KEY`); while off, `POST /api/v1/fuel/receipt-scan` is a
+  plain 404 (D-030: indistinguishable from a route that doesn't exist) and
+  `/me` reports `features.receiptScanner: false`, so upstream behaviour is
+  unchanged. *Draft only:* the endpoint saves the photo as a `RECEIPT`
+  document and returns a fill-up draft in stored units with per-field
+  confidence and warnings; it never writes `FuelEntry`. The app saves with
+  `POST /fuel` + `receiptDocumentId`, which links `Document.fuelEntryId` only
+  when the document is on the same vehicle (404 otherwise, 409 if already
+  linked). *Provider:* plain `fetch` to the Messages API behind a
+  `ReceiptExtractor` interface (no SDK dependency; an on-device/OCR extractor
+  can slot in). Default model `claude-sonnet-5-5` (current vision-capable
+  Sonnet per the models overview, 2026-10-22), `effort: low`, structured
+  output with the receipt JSON schema, 25 s timeout. Provider failures are a
+  502 `extraction_failed` that still carries the `documentId`; the provider's
+  body and the key never reach logs or clients. *Dates stay local:* the draft
+  carries `filledAtLocal` without a zone because the receipt doesn't know its
+  zone and the phone does. *Limit:* `RECEIPT_SCANNER_DAILY_LIMIT` (30) scans
+  per user per UTC day, counted in the additive `ReceiptScan` table (also an
+  audit trail of what was sent), 429 with `Retry-After`. *Migration:*
+  `Document.fuelEntryId` is added with `ALTER TABLE … ADD COLUMN` instead of
+  Prisma's table rebuild so the `sync_tombstones` triggers on `Document`
+  survive; drift-checked with `prisma migrate diff --exit-code`.

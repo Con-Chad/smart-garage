@@ -218,6 +218,7 @@ model User {
   sessions             Session[]
   apiDevices           ApiDevice[]
   apiIdempotencyKeys   ApiIdempotencyKey[]
+  receiptScans         ReceiptScan[]
   preferences          UserPreferences?
   maintenanceRecords   MaintenanceRecord[]       @relation("MaintenanceRecordCreatedBy")
   expenses             Expense[]                 @relation("ExpenseCreatedBy")
@@ -292,6 +293,23 @@ model ApiIdempotencyKey {
 
   @@unique([userId, key])
   @@index([createdAt])
+}
+
+/// One receipt-scanner request (fork: con-chad/smart-garage). Counted per user
+/// and UTC day for the daily limit; `documentId` points at the saved receipt.
+model ReceiptScan {
+  id         String   @id @default(cuid())
+  userId     String
+  vehicleId  String
+  documentId String?
+  /// "pending", "ok", "not_fuel_receipt" or "failed".
+  outcome    String
+  model      String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 /// A deleted row, so offline clients can drop it on their next
@@ -830,6 +848,7 @@ model FuelEntry {
 
   vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   createdBy User    @relation("FuelEntryCreatedBy", fields: [createdByUserId], references: [id])
+  documents Document[]
 
   @@index([vehicleId])
   @@index([filledAt])
@@ -883,6 +902,7 @@ model Document {
   vehicleId           String?
   maintenanceRecordId String?
   expenseId           String?
+  fuelEntryId         String?
   purpose             DocumentPurpose   @default(OTHER)
   category            DocumentCategory?
   title               String?
@@ -902,9 +922,11 @@ model Document {
   vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   maintenanceRecord MaintenanceRecord? @relation(fields: [maintenanceRecordId], references: [id], onDelete: SetNull)
   expense           Expense?           @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  fuelEntry         FuelEntry?         @relation(fields: [fuelEntryId], references: [id], onDelete: SetNull)
 
   @@index([vehicleId])
   @@index([uploadedByUserId])
+  @@index([fuelEntryId])
 }
 
 model VehicleShare {

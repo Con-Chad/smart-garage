@@ -277,15 +277,39 @@ export async function deleteShare(request: Request, context: ShareContext) {
 // ─── Fuel, expenses, odometer ──────────────────────────────────────────────
 
 export const createFuel = write(async (ctx) => {
-  const body = await jsonBody(ctx, fuelCreateSchema);
+  const { receiptDocumentId, ...body } = await jsonBody(ctx, fuelCreateSchema);
   assertCanEditVehicle(ctx.scope, body.vehicleId);
+  if (receiptDocumentId) await assertLinkableReceipt(receiptDocumentId, body.vehicleId);
   const id = await createFuelEntry({
     ...body,
     stationName: body.stationName ?? undefined,
     note: body.note ?? undefined,
   });
+  if (receiptDocumentId) {
+    // Re-checked in the where clause so a concurrent link can't steal it.
+    await prisma.document.updateMany({
+      where: { id: receiptDocumentId, vehicleId: body.vehicleId, deletedAt: null, fuelEntryId: null },
+      data: { fuelEntryId: id },
+    });
+  }
   return respondWithResource(ctx.scope, "fuelEntries", id, 201);
 });
+
+/**
+ * A receipt may only be attached to a fill-up of the vehicle it was scanned
+ * for (D-042). Other vehicles' documents are 404 (D-030); a document that
+ * already belongs to another fill-up is a 409.
+ */
+async function assertLinkableReceipt(documentId: string, vehicleId: string) {
+  const document = await prisma.document.findFirst({
+    where: { id: documentId, vehicleId, deletedAt: null },
+    select: { fuelEntryId: true },
+  });
+  if (!document) throw new ApiProblem(404, "not_found", "Not found");
+  if (document.fuelEntryId) {
+    throw new ApiProblem(409, "document_already_linked", "This receipt is already attached to another fill-up");
+  }
+}
 
 export const deleteFuel = writeById(async (ctx, id) => {
   await findEditableRow(ctx.scope, "fuelEntries", id);

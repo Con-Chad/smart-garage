@@ -44,6 +44,10 @@ Or from this repo: `docker compose up -d` (see [docker-compose.yml](../docker-co
 | `SESSION_COOKIE_SECURE` | unset | Session cookie `Secure` flag — see below |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | unset | Optional single sign-on — see [OIDC.md](./OIDC.md) |
 | `TANKERKOENIG_API_KEY` | unset | Optional live fuel prices. Can also be set in the app under Settings → Fuel prices — see [FUEL-PRICES.md](./FUEL-PRICES.md) |
+| `RECEIPT_SCANNER_ENABLED` | `false` | Optional fuel-receipt scanner for the mobile app (sends receipt photos to the Anthropic API). Needs `ANTHROPIC_API_KEY` — see [mobile/RECEIPT-SCANNER.md](./mobile/RECEIPT-SCANNER.md) |
+| `ANTHROPIC_API_KEY` | unset | API key for the receipt scanner (Anthropic Console, billed separately from a Claude subscription). Server-side only |
+| `RECEIPT_SCANNER_MODEL` | `claude-sonnet-5-5` | Vision-capable Claude model id for the scanner (`claude-haiku-5-5` is cheaper) |
+| `RECEIPT_SCANNER_DAILY_LIMIT` | `30` | Receipt scans per user per day (UTC) |
 
 Set in the Unraid template UI or in `docker-compose.yml`.
 

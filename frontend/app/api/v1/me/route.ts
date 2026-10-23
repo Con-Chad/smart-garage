@@ -2,7 +2,7 @@ import { API_VERSION, apiJson, requireApiAuth } from "@/lib/api/v1/http";
 import { findPreferencesForUser } from "@/lib/repositories/preferences";
 import { APP_VERSION } from "@/lib/app-version";
 import { preferencesToApi } from "@/lib/api/v1/settings";
-import { receiptScannerConfig } from "@/lib/receipts/config";
+import { receiptScannerConfig, receiptScannerFeatures } from "@/lib/receipts/config";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +27,8 @@ export async function GET() {
     device: auth.device ? { id: auth.device.id, name: auth.device.name } : null,
     preferences: preferencesToApi(preferences),
     units: { distance: "km", volume: "l", money: "cents" },
-    /** Optional server features the app shows or hides (D-042). */
-    features: { receiptScanner: receiptScannerConfig().enabled },
+    /** Optional server features the app shows or hides (D-042, D-044). */
+    features: receiptScannerFeatures(receiptScannerConfig().enabled),
     server: { version: APP_VERSION, apiVersion: API_VERSION },
   });
 }

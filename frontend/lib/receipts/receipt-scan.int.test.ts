@@ -375,10 +375,13 @@ describe("POST /api/v1/fuel/receipt-scan", () => {
 
   it("GET /me advertises the feature only when it is on", async () => {
     await as(owner.id);
-    expect((await json(await me())).features).toEqual({ receiptScanner: false });
+    expect((await json(await me())).features).toEqual({ receiptScanner: false, receiptScannerKinds: [] });
 
     process.env.RECEIPT_SCANNER_ENABLED = "true";
     process.env.ANTHROPIC_API_KEY = "test-key-never-used";
-    expect((await json(await me())).features).toEqual({ receiptScanner: true });
+    expect((await json(await me())).features).toEqual({
+      receiptScanner: true,
+      receiptScannerKinds: ["fuel", "service"],
+    });
   });
 });

@@ -279,3 +279,36 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   S-6 (session token hashing — migration + invalidates sessions), S-10
   (proxy body limit), S-11 (secrets at rest — operator decision), S-12
   (public health stats — upstream), S-13 (security headers — Cloudflare).
+
+## Receipt scanner: service receipts
+
+- **D-044: Service / vehicle-expense receipts.** The scanner also reads
+  workshop invoices, repair bills, parts and tyre receipts and other vehicle
+  bills (insurance, tax, registration). *Sibling endpoint, not a `kind`
+  parameter:* `POST /api/v1/records/receipt-scan` beside the unchanged
+  `POST /api/v1/fuel/receipt-scan`, following the resource the draft is for
+  (records = maintenance records) and keeping the fuel response shape
+  byte-for-byte compatible. Same multipart body, checks, error codes,
+  `RECEIPT` document, idempotency and 502-with-`documentId`; both share one
+  handler skeleton (`createScanHandler` in `lib/receipts/scan.ts`) and one
+  provider call (`requestVisionJson`). *One quota:* both kinds count against
+  `RECEIPT_SCANNER_DAILY_LIMIT` in the same `ReceiptScan` table (new outcome
+  string `not_service_receipt`; no migration). *Mapping:* the model may only
+  name the static maintenance template slugs (`MAINTENANCE_TEMPLATE_SEEDS`,
+  enum in the JSON schema); the server matches them to the vehicle's active
+  schedules by `templateId` and returns `suggestedScheduleId`. Custom
+  schedules without a template are not matched (no free-text guessing);
+  vehicle data is never sent to the model. Parts/fluids become `items` in the
+  `POST /records` shape (`MaintenanceItemCategory`, `MaintenanceItemUnit`);
+  labour/fees/discounts go to `otherLines` and a ready-made `note`. Money is
+  integer cents, odometer km (miles converted). `suggestedTarget` tells the
+  app whether to save a record (MAINTENANCE/REPAIR or any service type) or a
+  plain expense. A fuel receipt is answered `isServiceReceipt: false` +
+  `fuel_receipt` rather than silently switching kinds. *Linking:*
+  `receiptDocumentId` is now accepted by `POST /records` (sets
+  `Document.maintenanceRecordId`) and `POST /expenses` (sets
+  `Document.expenseId`) with the fuel rules: same vehicle or 404, 409 when the
+  document is already linked to another entry of that kind. *Discovery:*
+  `/me` keeps `features.receiptScanner` and adds
+  `features.receiptScannerKinds` (`["fuel","service"]`, `[]` when off). Model
+  config unchanged (`claude-sonnet-5-5` default is current).

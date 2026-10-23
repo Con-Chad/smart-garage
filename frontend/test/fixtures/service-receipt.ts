@@ -1,0 +1,56 @@
+import type { ModelServiceReceipt } from "@/lib/receipts/service-extract";
+
+/** A German workshop invoice as the vision model would return it (D-044 tests). */
+export const workshopReceipt: ModelServiceReceipt = {
+  isVehicleReceipt: true,
+  isFuelReceipt: false,
+  expenseCategory: "MAINTENANCE",
+  vendorName: "Autohaus Müller",
+  vendorAddress: "Hauptstr. 1, 80331 München",
+  invoiceNumber: "R-2026-1042",
+  serviceDate: "2026-10-15",
+  odometer: { value: 48210, unit: "km" },
+  serviceTypes: [
+    { slug: "oil_change", confidence: 0.95 },
+    { slug: "cabin_filter", confidence: 0.8 },
+  ],
+  lineItems: [
+    {
+      description: "Motoröl 5W-30",
+      kind: "fluid",
+      itemCategory: "ENGINE_OIL",
+      brand: "Castrol",
+      partNumber: null,
+      quantity: 4.5,
+      unit: "l",
+      total: 62.1,
+    },
+    {
+      description: "Ölfilter",
+      kind: "part",
+      itemCategory: "OIL_FILTER",
+      brand: "Mann",
+      partNumber: "HU 6004 x",
+      quantity: 1,
+      unit: "pcs",
+      total: 14.9,
+    },
+    {
+      description: "Arbeitslohn Inspektion",
+      kind: "labour",
+      itemCategory: null,
+      brand: null,
+      partNumber: null,
+      quantity: 1.5,
+      unit: null,
+      total: 120,
+    },
+  ],
+  labour: 120,
+  parts: 77,
+  tax: 37.43,
+  total: 234.43,
+  currency: "EUR",
+  notes: "Bremsbeläge hinten bei 3 mm",
+  confidence: { serviceDate: 0.9, odometer: 0.95, total: 0.98, vendorName: 0.9, serviceTypes: 0.85 },
+};

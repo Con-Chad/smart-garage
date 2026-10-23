@@ -7,8 +7,16 @@ import {
   claudeVisionExtractor,
   PROVIDER_MAX_IMAGE_BASE64_BYTES,
   ReceiptExtractionError,
+  type ModelReceipt,
   type ReceiptExtractor,
+  type ReceiptImage,
 } from "@/lib/receipts/extract";
+import { buildServiceReceiptDraft } from "@/lib/receipts/service-draft";
+import {
+  claudeServiceReceiptExtractor,
+  type ModelServiceReceipt,
+  type ServiceReceiptExtractor,
+} from "@/lib/receipts/service-extract";
 import { releaseScanSlot, reserveScanSlot, secondsUntilNextUtcDay } from "@/lib/receipts/quota";
 import { createVehicleFileDocument } from "@/lib/repositories/documents";
 import { findPreferencesForUser } from "@/lib/repositories/preferences";
@@ -44,7 +52,22 @@ export type ReceiptScanDeps = {
   now?: () => Date;
 };
 
-export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
+type ScanKindSpec<Raw> = {
+  /** Extractor used when the deps don't inject one. */
+  defaultExtractor: (config: ReceiptScannerConfig) => { model: string; extract(image: ReceiptImage): Promise<Raw> };
+  injected?: { model: string; extract(image: ReceiptImage): Promise<Raw> };
+  /** Builds the 200 body (minus documentId/model/scansRemainingToday) and the `ReceiptScan.outcome`. */
+  respond: (
+    raw: Raw,
+    context: { userId: string; vehicleId: string; at: Date },
+  ) => Promise<{ outcome: string; body: Record<string, unknown> }>;
+};
+
+/**
+ * The checks, quota, document save and error mapping every scan kind shares
+ * (D-042, D-044). Only extraction and the draft differ per kind.
+ */
+function createScanHandler<Raw>(deps: Pick<ReceiptScanDeps, "config" | "now">, spec: ScanKindSpec<Raw>) {
   const readConfig = deps.config ?? (() => receiptScannerConfig());
   const now = deps.now ?? (() => new Date());
 
@@ -89,9 +112,7 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
         );
       }
 
-      const extractor =
-        deps.extractor ??
-        claudeVisionExtractor({ apiKey: config.apiKey ?? "", model: config.model, effort: config.effort });
+      const extractor = spec.injected ?? spec.defaultExtractor(config);
 
       let document: { id: string };
       try {
@@ -114,7 +135,7 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
       const finish = (outcome: string) =>
         prisma.receiptScan.update({ where: { id: slot.id }, data: { outcome } });
 
-      let raw;
+      let raw: Raw;
       try {
         raw = await extractor.extract({ bytes, mimeType: sniffed });
       } catch (error) {
@@ -133,19 +154,76 @@ export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
         throw error;
       }
 
-      const preferences = await findPreferencesForUser(ctx.user.id);
-      const result = buildReceiptDraft(raw, { fallbackCurrency: preferences.currency ?? null, now: at });
-      await finish(result.isFuelReceipt ? "ok" : "not_fuel_receipt");
+      const result = await spec.respond(raw, { userId: ctx.user.id, vehicleId, at });
+      await finish(result.outcome);
 
       return apiJson({
         documentId: document.id,
-        isFuelReceipt: result.isFuelReceipt,
-        draft: result.draft,
-        warnings: result.warnings,
+        ...result.body,
         model: extractor.model,
         scansRemainingToday: Math.max(0, config.dailyLimit - slot.used),
       });
     });
+}
+
+async function preferredCurrency(userId: string): Promise<string | null> {
+  const preferences = await findPreferencesForUser(userId);
+  return preferences.currency ?? null;
+}
+
+/** `POST /api/v1/fuel/receipt-scan` handler; the response shape is unchanged since D-042. */
+export function createReceiptScanHandler(deps: ReceiptScanDeps = {}) {
+  return createScanHandler<ModelReceipt>(deps, {
+    injected: deps.extractor,
+    defaultExtractor: (config) =>
+      claudeVisionExtractor({ apiKey: config.apiKey ?? "", model: config.model, effort: config.effort }),
+    respond: async (raw, { userId, at }) => {
+      const result = buildReceiptDraft(raw, { fallbackCurrency: await preferredCurrency(userId), now: at });
+      return {
+        outcome: result.isFuelReceipt ? "ok" : "not_fuel_receipt",
+        body: { isFuelReceipt: result.isFuelReceipt, draft: result.draft, warnings: result.warnings },
+      };
+    },
+  });
+}
+
+export type ServiceReceiptScanDeps = Omit<ReceiptScanDeps, "extractor"> & {
+  extractor?: ServiceReceiptExtractor;
+};
+
+/**
+ * `POST /api/v1/records/receipt-scan` (D-044): same multipart body, checks,
+ * quota and errors as the fuel scan; returns a draft maintenance record /
+ * expense matched against the vehicle's active schedules. Nothing is written
+ * to `MaintenanceRecord` or `Expense`; the app posts the confirmed values to
+ * `POST /api/v1/records` or `POST /api/v1/expenses` with `receiptDocumentId`.
+ */
+export function createServiceReceiptScanHandler(deps: ServiceReceiptScanDeps = {}) {
+  return createScanHandler<ModelServiceReceipt>(deps, {
+    injected: deps.extractor,
+    defaultExtractor: (config) =>
+      claudeServiceReceiptExtractor({ apiKey: config.apiKey ?? "", model: config.model, effort: config.effort }),
+    respond: async (raw, { userId, vehicleId, at }) => {
+      const schedules = await prisma.vehicleMaintenanceSchedule.findMany({
+        where: { vehicleId, isActive: true },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, customName: true, template: { select: { slug: true, nameEn: true } } },
+      });
+      const result = buildServiceReceiptDraft(raw, {
+        fallbackCurrency: await preferredCurrency(userId),
+        now: at,
+        schedules: schedules.map((s) => ({
+          id: s.id,
+          templateSlug: s.template?.slug ?? null,
+          name: s.customName ?? s.template?.nameEn ?? "",
+        })),
+      });
+      return {
+        outcome: result.isServiceReceipt ? "ok" : "not_service_receipt",
+        body: { isServiceReceipt: result.isServiceReceipt, draft: result.draft, warnings: result.warnings },
+      };
+    },
+  });
 }
 
 function userMessageFor(error: ReceiptExtractionError): string {
@@ -162,5 +240,6 @@ function userMessageFor(error: ReceiptExtractionError): string {
   }
 }
 
-/** Route handler with the real configuration and the Claude extractor. */
+/** Route handlers with the real configuration and the Claude extractors. */
 export const scanFuelReceipt = createReceiptScanHandler();
+export const scanServiceReceipt = createServiceReceiptScanHandler();

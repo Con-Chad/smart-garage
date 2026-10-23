@@ -195,84 +195,102 @@ export type ClaudeVisionExtractorOptions = {
   endpoint?: string;
 };
 
+/** What one structured-output call sends besides the image (fuel and service scans differ only here). */
+export type VisionRequestSpec = {
+  system: string;
+  userText: string;
+  schema: Record<string, unknown>;
+};
+
 /**
  * Plain `fetch` to the Messages API, no SDK: one request shape, one
  * response shape, and no new dependency on a server that otherwise never
- * calls out.
+ * calls out. Resolves with the validated `content` text; the caller parses
+ * it against its own schema.
  */
-export function claudeVisionExtractor(options: ClaudeVisionExtractorOptions): ReceiptExtractor {
+export async function requestVisionJson(
+  options: ClaudeVisionExtractorOptions,
+  spec: VisionRequestSpec,
+  image: ReceiptImage,
+  signal?: AbortSignal,
+): Promise<string> {
   const doFetch = options.fetch ?? globalThis.fetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_EXTRACTION_TIMEOUT_MS;
   const endpoint = options.endpoint ?? ANTHROPIC_MESSAGES_URL;
 
+  const data = Buffer.from(image.bytes).toString("base64");
+  if (data.length > PROVIDER_MAX_IMAGE_BASE64_BYTES) {
+    throw new ReceiptExtractionError("image_too_large", "The image exceeds the provider's 10 MB limit");
+  }
+
+  const body = {
+    model: options.model,
+    max_tokens: MAX_TOKENS,
+    system: spec.system,
+    output_config: {
+      ...(options.effort ? { effort: options.effort } : {}),
+      format: { type: "json_schema", schema: spec.schema },
+    },
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: image.mimeType, data } },
+          { type: "text", text: spec.userText },
+        ],
+      },
+    ],
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onOuterAbort = () => controller.abort();
+  signal?.addEventListener("abort", onOuterAbort, { once: true });
+
+  let response: Response;
+  try {
+    response = await doFetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": options.apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch {
+    if (controller.signal.aborted) {
+      throw new ReceiptExtractionError("timeout", `The vision provider did not answer within ${timeoutMs} ms`);
+    }
+    throw new ReceiptExtractionError("provider", "Could not reach the vision provider");
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onOuterAbort);
+  }
+
+  if (!response.ok) {
+    // Log the status and error type only; the body is never forwarded.
+    const type = await providerErrorType(response);
+    console.warn(`[receipt-scanner] provider responded ${response.status}${type ? ` (${type})` : ""}`);
+    throw new ReceiptExtractionError("provider", "The vision provider rejected the request", response.status);
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ReceiptExtractionError("invalid_output", "The vision provider returned a non-JSON body");
+  }
+  return messagesText(payload);
+}
+
+export function claudeVisionExtractor(options: ClaudeVisionExtractorOptions): ReceiptExtractor {
+  const spec = { system: SYSTEM_PROMPT, userText: USER_PROMPT, schema: RECEIPT_JSON_SCHEMA };
   return {
     model: options.model,
     async extract(image, extractOptions) {
-      const data = Buffer.from(image.bytes).toString("base64");
-      if (data.length > PROVIDER_MAX_IMAGE_BASE64_BYTES) {
-        throw new ReceiptExtractionError("image_too_large", "The image exceeds the provider's 10 MB limit");
-      }
-
-      const body = {
-        model: options.model,
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
-        output_config: {
-          ...(options.effort ? { effort: options.effort } : {}),
-          format: { type: "json_schema", schema: RECEIPT_JSON_SCHEMA },
-        },
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: image.mimeType, data } },
-              { type: "text", text: USER_PROMPT },
-            ],
-          },
-        ],
-      };
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const onOuterAbort = () => controller.abort();
-      extractOptions?.signal?.addEventListener("abort", onOuterAbort, { once: true });
-
-      let response: Response;
-      try {
-        response = await doFetch(endpoint, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": options.apiKey,
-            "anthropic-version": ANTHROPIC_VERSION,
-          },
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-      } catch {
-        if (controller.signal.aborted) {
-          throw new ReceiptExtractionError("timeout", `The vision provider did not answer within ${timeoutMs} ms`);
-        }
-        throw new ReceiptExtractionError("provider", "Could not reach the vision provider");
-      } finally {
-        clearTimeout(timer);
-        extractOptions?.signal?.removeEventListener("abort", onOuterAbort);
-      }
-
-      if (!response.ok) {
-        // Log the status and error type only; the body is never forwarded.
-        const type = await providerErrorType(response);
-        console.warn(`[receipt-scanner] provider responded ${response.status}${type ? ` (${type})` : ""}`);
-        throw new ReceiptExtractionError("provider", "The vision provider rejected the request", response.status);
-      }
-
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        throw new ReceiptExtractionError("invalid_output", "The vision provider returned a non-JSON body");
-      }
-      return parseMessagesResponse(payload);
+      return parseModelJson(await requestVisionJson(options, spec, image, extractOptions?.signal));
     },
   };
 }
@@ -291,8 +309,8 @@ const messagesResponseSchema = z.object({
   content: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()),
 });
 
-/** Validates a Messages API response and the JSON object inside it. */
-export function parseMessagesResponse(payload: unknown): ModelReceipt {
+/** Validates a Messages API response and returns its text (stop reasons mapped to errors). */
+export function messagesText(payload: unknown): string {
   const parsed = messagesResponseSchema.safeParse(payload);
   if (!parsed.success) {
     throw new ReceiptExtractionError("invalid_output", "Unexpected response shape from the vision provider");
@@ -304,24 +322,31 @@ export function parseMessagesResponse(payload: unknown): ModelReceipt {
     throw new ReceiptExtractionError("truncated", "The vision provider's answer was cut off");
   }
 
-  const text = parsed.data.content
+  return parsed.data.content
     .filter((block) => block.type === "text" && typeof block.text === "string")
     .map((block) => block.text as string)
     .join("")
     .trim();
-  return parseModelJson(text);
+}
+
+/** Validates a Messages API response and the fuel receipt JSON inside it. */
+export function parseMessagesResponse(payload: unknown): ModelReceipt {
+  return parseModelJson(messagesText(payload));
+}
+
+/** Strips stray code fences and parses JSON; `invalid_output` when it isn't JSON. */
+export function parseJsonText(text: string): unknown {
+  const unfenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return JSON.parse(unfenced);
+  } catch {
+    throw new ReceiptExtractionError("invalid_output", "The vision provider did not return JSON");
+  }
 }
 
 /** Parses the model's text as the receipt object; tolerates stray code fences. */
 export function parseModelJson(text: string): ModelReceipt {
-  const unfenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  let json: unknown;
-  try {
-    json = JSON.parse(unfenced);
-  } catch {
-    throw new ReceiptExtractionError("invalid_output", "The vision provider did not return JSON");
-  }
-  const result = modelReceiptSchema.safeParse(json);
+  const result = modelReceiptSchema.safeParse(parseJsonText(text));
   if (!result.success) {
     throw new ReceiptExtractionError("invalid_output", "The vision provider's JSON did not match the receipt schema");
   }

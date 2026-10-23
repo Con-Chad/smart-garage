@@ -279,36 +279,46 @@ export async function deleteShare(request: Request, context: ShareContext) {
 export const createFuel = write(async (ctx) => {
   const { receiptDocumentId, ...body } = await jsonBody(ctx, fuelCreateSchema);
   assertCanEditVehicle(ctx.scope, body.vehicleId);
-  if (receiptDocumentId) await assertLinkableReceipt(receiptDocumentId, body.vehicleId);
+  if (receiptDocumentId) await assertLinkableReceipt(receiptDocumentId, body.vehicleId, "fuelEntryId");
   const id = await createFuelEntry({
     ...body,
     stationName: body.stationName ?? undefined,
     note: body.note ?? undefined,
   });
-  if (receiptDocumentId) {
-    // Re-checked in the where clause so a concurrent link can't steal it.
-    await prisma.document.updateMany({
-      where: { id: receiptDocumentId, vehicleId: body.vehicleId, deletedAt: null, fuelEntryId: null },
-      data: { fuelEntryId: id },
-    });
-  }
+  if (receiptDocumentId) await linkReceipt(receiptDocumentId, body.vehicleId, "fuelEntryId", id);
   return respondWithResource(ctx.scope, "fuelEntries", id, 201);
 });
 
+type ReceiptLink = "fuelEntryId" | "maintenanceRecordId" | "expenseId";
+
+const ALREADY_LINKED: Record<ReceiptLink, string> = {
+  fuelEntryId: "This receipt is already attached to another fill-up",
+  maintenanceRecordId: "This receipt is already attached to another service record",
+  expenseId: "This receipt is already attached to another expense",
+};
+
 /**
- * A receipt may only be attached to a fill-up of the vehicle it was scanned
- * for (D-042). Other vehicles' documents are 404 (D-030); a document that
- * already belongs to another fill-up is a 409.
+ * A receipt may only be attached to an entry of the vehicle it was scanned
+ * for (D-042, D-044). Other vehicles' documents are 404 (D-030); a document
+ * that already belongs to another entry of the same kind is a 409.
  */
-async function assertLinkableReceipt(documentId: string, vehicleId: string) {
+async function assertLinkableReceipt(documentId: string, vehicleId: string, link: ReceiptLink) {
   const document = await prisma.document.findFirst({
     where: { id: documentId, vehicleId, deletedAt: null },
-    select: { fuelEntryId: true },
+    select: { [link]: true } as Record<ReceiptLink, boolean>,
   });
   if (!document) throw new ApiProblem(404, "not_found", "Not found");
-  if (document.fuelEntryId) {
-    throw new ApiProblem(409, "document_already_linked", "This receipt is already attached to another fill-up");
+  if ((document as Record<string, unknown>)[link]) {
+    throw new ApiProblem(409, "document_already_linked", ALREADY_LINKED[link]);
   }
+}
+
+/** Sets the link, re-checked in the where clause so a concurrent link can't steal it. */
+async function linkReceipt(documentId: string, vehicleId: string, link: ReceiptLink, targetId: string) {
+  await prisma.document.updateMany({
+    where: { id: documentId, vehicleId, deletedAt: null, [link]: null },
+    data: { [link]: targetId },
+  });
 }
 
 export const deleteFuel = writeById(async (ctx, id) => {
@@ -318,13 +328,15 @@ export const deleteFuel = writeById(async (ctx, id) => {
 });
 
 export const createExpenseEntry = write(async (ctx) => {
-  const body = await jsonBody(ctx, expenseCreateSchema);
+  const { receiptDocumentId, ...body } = await jsonBody(ctx, expenseCreateSchema);
   assertCanEditVehicle(ctx.scope, body.vehicleId);
+  if (receiptDocumentId) await assertLinkableReceipt(receiptDocumentId, body.vehicleId, "expenseId");
   const id = await createExpense({
     ...body,
     maintenanceRecordId: body.maintenanceRecordId ?? undefined,
     description: body.description ?? undefined,
   });
+  if (receiptDocumentId) await linkReceipt(receiptDocumentId, body.vehicleId, "expenseId", id);
   return respondWithResource(ctx.scope, "expenses", id, 201);
 });
 
@@ -404,8 +416,11 @@ export const deleteScheduleItemDefaults = writeById(async (ctx, id) => {
 });
 
 export const createRecord = write(async (ctx) => {
-  const { items, ...body } = await jsonBody(ctx, recordCreateSchema);
-  await findEditableRow(ctx.scope, "schedules", body.scheduleId);
+  const { items, receiptDocumentId, ...body } = await jsonBody(ctx, recordCreateSchema);
+  const schedule = await findEditableRow<{ vehicleId: string }>(ctx.scope, "schedules", body.scheduleId);
+  if (receiptDocumentId) {
+    await assertLinkableReceipt(receiptDocumentId, schedule.vehicleId, "maintenanceRecordId");
+  }
   const id = await logMaintenanceService(
     {
       ...body,
@@ -415,6 +430,7 @@ export const createRecord = write(async (ctx) => {
     },
     (items ?? []) as MaintenanceItemInput[],
   );
+  if (receiptDocumentId) await linkReceipt(receiptDocumentId, schedule.vehicleId, "maintenanceRecordId", id);
   return respondWithResource(ctx.scope, "maintenanceRecords", id, 201);
 });
 

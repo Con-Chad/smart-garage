@@ -41,6 +41,8 @@ export const expenseCreateSchema = z.object({
   odometerKm: km.nullable().optional(),
   maintenanceRecordId: id.nullable().optional(),
   description: text(500).nullable().optional(),
+  /** A RECEIPT document of the same vehicle (from a receipt scan) to attach to the new expense (D-044). */
+  receiptDocumentId: id.nullable().optional(),
 });
 
 export const odometerCreateSchema = z.object({
@@ -88,7 +90,12 @@ const recordFields = {
   saveAsDefault: z.boolean().optional(),
 };
 
-export const recordCreateSchema = z.object({ scheduleId: id, ...recordFields });
+export const recordCreateSchema = z.object({
+  scheduleId: id,
+  ...recordFields,
+  /** A RECEIPT document of the schedule's vehicle (from `/records/receipt-scan`) to attach (D-044). */
+  receiptDocumentId: id.nullable().optional(),
+});
 export const recordPatchSchema = z.object(recordFields).partial();
 
 export const noteFieldsSchema = z.object({

@@ -64,3 +64,14 @@ export function receiptScannerConfig(env: Env = process.env): ReceiptScannerConf
     effort,
   };
 }
+
+/** Receipt kinds the scanner reads; each has its own endpoint (D-044). */
+export const RECEIPT_SCANNER_KINDS = ["fuel", "service"] as const;
+
+/** `/api/v1/me` `features` entries for the scanner. */
+export function receiptScannerFeatures(enabled: boolean) {
+  return {
+    receiptScanner: enabled,
+    receiptScannerKinds: enabled ? [...RECEIPT_SCANNER_KINDS] : [],
+  };
+}

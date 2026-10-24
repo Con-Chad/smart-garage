@@ -9,6 +9,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **WiCAN OBD adapter ingest** — `POST /api/ingest/wican?vehicle=<id>` logs
+  one odometer reading per trip from a WiCAN adapter — the trip's last value,
+  saved once the adapter has been quiet for 30 minutes — through the same
+  path as the odometer quick-update. Off unless `WICAN_INGEST_TOKEN` is set;
+  `WICAN_ODO_UNIT` (km|mi) sets the adapter's unit. Falls back to the
+  distance-since-codes-cleared counter when `ODOMETER` is missing (D-045).
+
 - **Push notifications to the mobile app (UnifiedPush)** — a third
   notification channel next to Pushover and Telegram. The Android app
   registers a Web Push subscription from its UnifiedPush distributor

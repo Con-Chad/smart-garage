@@ -312,3 +312,33 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   `/me` keeps `features.receiptScanner` and adds
   `features.receiptScannerKinds` (`["fuel","service"]`, `[]` when off). Model
   config unchanged (`claude-sonnet-5-5` default is current).
+
+## WiCAN OBD ingest
+
+- **D-045: Odometer from a WiCAN adapter.** `POST /api/ingest/wican?vehicle=<id>`,
+  outside `/api/v1`, authenticated only by `Authorization: Bearer
+  $WICAN_INGEST_TOKEN` (constant-time compare; unset = always 401) — no
+  session or device token, and the write is made as the vehicle owner. The
+  body is never logged and only `autopid_data` is read, because the first
+  POST after each adapter boot carries `config`/`status` with Wi-Fi
+  credentials. `ODOMETER` (unit `WICAN_ODO_UNIT`, km|mi) is converted to km,
+  the only stored unit (vehicles have no unit of their own; km/mi is a
+  per-user display setting). The write goes through `updateOdometerForUser`,
+  extracted from the quick-update's `updateOdometerForCurrentUser`, with
+  `OdometerLog.source = "wican"`; maintenance due-dates follow because they
+  derive from `currentOdometerKm`. *One reading per trip, at its end:* each
+  POST only updates a pending value (`WicanVehicleState.pendingOdometerKm`,
+  the trip's highest, plus `lastSeenAt`). Once the adapter has been quiet for
+  30 min the value is saved, dated `lastSeenAt` — by the 15-min background
+  tick in `instrumentation.ts` (`flushQuietWicanTrips`), or by the next
+  trip's first POST if that comes first; so a trip lands 30–45 min after it
+  ends. Saved only when higher than both the vehicle's current reading and
+  the newest log. POSTs and the sweep are serialised per vehicle in-process.
+  *Fallback* without `ODOMETER`: distance-since-codes-cleared (PID 01 31, km;
+  keys `DIST_SINCE_CODES_CLEARED`, `DISTANCE_SINCE_CODES_CLEARED`,
+  `DIST_SINCE_CLR`, `DIST_SINCE_DTC_CLR` — WiCAN's name unconfirmed) →
+  newest non-WiCAN reading + (counter − counter at anchor). The anchor
+  (same row, not in backups) is taken from the first counter value seen
+  after that reading, and re-taken on a newer manual reading or when the
+  counter drops. 204 for every accepted POST, 400 bad JSON / missing `vehicle`, 404 unknown
+  or deleted vehicle, 413 over 256 KB.

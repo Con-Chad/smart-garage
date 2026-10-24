@@ -297,6 +297,26 @@ model ApiIdempotencyKey {
 
 /// One receipt-scanner request (fork: con-chad/smart-garage). Counted per user
 /// and UTC day for the daily limit; `documentId` points at the saved receipt.
+/// WiCAN ingest (fork: con-chad/smart-garage), one row per vehicle.
+/// pending*: the newest value of the current trip, saved once the adapter has
+/// been quiet for a while. anchor*: for the distance-since-codes-cleared
+/// fallback, odometer = anchorOdometerKm + (counter - anchorCounterKm), taken
+/// from the newest non-WiCAN reading. Derived state only; not in backups.
+model WicanVehicleState {
+  vehicleId         String    @id
+  pendingOdometerKm Int?
+  lastSeenAt        DateTime?
+  /// The reading the anchor was taken from; a newer one re-anchors.
+  anchorLogId       String?
+  anchorOdometerKm  Int?
+  anchorCounterKm   Float?
+  updatedAt         DateTime  @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([lastSeenAt])
+}
+
 model ReceiptScan {
   id         String   @id @default(cuid())
   userId     String
@@ -583,6 +603,7 @@ model Vehicle {
   insurancePolicies    InsurancePolicy[]
   linkedNotes          Note[]
   customFieldValues    VehicleCustomFieldValue[]
+  wicanState           WicanVehicleState?
 
   @@index([ownerUserId])
   @@index([catalogModelYearId])

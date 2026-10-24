@@ -13,6 +13,13 @@ async function notificationTick() {
     await runMaintenanceAlertsForAllUsers();
   } catch {
     // Never let the background worker crash the process.
+  }
+  try {
+    // WiCAN: save the last value of trips whose adapter has gone quiet.
+    const { flushQuietWicanTrips } = await import("@/lib/ingest/wican");
+    await flushQuietWicanTrips();
+  } catch {
+    // Same: a failed sweep is retried on the next tick.
   } finally {
     workerRunning = false;
   }

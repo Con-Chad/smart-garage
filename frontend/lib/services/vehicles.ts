@@ -197,19 +197,35 @@ export async function updateOdometerForCurrentUser(
   currentOdometerKm: number,
 ): Promise<{ success: boolean; error?: VehicleActionError }> {
   try {
-    if (!Number.isInteger(currentOdometerKm) || currentOdometerKm < 0) {
-      return { success: false, error: { code: "mileageInvalid" } };
-    }
     const userId = await getCurrentUserId();
-    const result = await updateVehicleOdometer(vehicleId, userId, currentOdometerKm);
-    if (result.count === 0) {
-      return { success: false, error: { code: "notFound" } };
-    }
-    await createOdometerLog(vehicleId, userId, currentOdometerKm);
-    return { success: true };
+    return await updateOdometerForUser(vehicleId, userId, currentOdometerKm);
   } catch {
     return { success: false, error: { code: "unknown" } };
   }
+}
+
+/**
+ * The odometer quick-update for an explicit user: sets the vehicle's current
+ * reading and logs it. Maintenance due-dates are derived from
+ * `currentOdometerKm`, so they follow on the next read. Shared with the WiCAN
+ * ingest route, which has no session and acts as the vehicle owner.
+ */
+export async function updateOdometerForUser(
+  vehicleId: string,
+  userId: string,
+  currentOdometerKm: number,
+  source = "manual",
+  recordedAt?: Date,
+): Promise<{ success: boolean; error?: VehicleActionError }> {
+  if (!Number.isInteger(currentOdometerKm) || currentOdometerKm < 0) {
+    return { success: false, error: { code: "mileageInvalid" } };
+  }
+  const result = await updateVehicleOdometer(vehicleId, userId, currentOdometerKm);
+  if (result.count === 0) {
+    return { success: false, error: { code: "notFound" } };
+  }
+  await createOdometerLog(vehicleId, userId, currentOdometerKm, source, recordedAt);
+  return { success: true };
 }
 
 export async function createVehicleForCurrentUser(

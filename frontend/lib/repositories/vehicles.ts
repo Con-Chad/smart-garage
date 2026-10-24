@@ -139,12 +139,14 @@ export async function createOdometerLog(
   userId: string,
   odometerKm: number,
   source = "manual",
+  recordedAt?: Date,
 ) {
   return prisma.odometerLog.create({
     data: {
       vehicleId,
       odometerKm,
       source,
+      recordedAt,
       createdByUserId: userId,
     },
   });

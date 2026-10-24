@@ -216,7 +216,8 @@ export async function updateOdometerForUser(
   currentOdometerKm: number,
   source = "manual",
   recordedAt?: Date,
-): Promise<{ success: boolean; error?: VehicleActionError }> {
+  note?: string | null,
+): Promise<{ success: boolean; error?: VehicleActionError; logId?: string }> {
   if (!Number.isInteger(currentOdometerKm) || currentOdometerKm < 0) {
     return { success: false, error: { code: "mileageInvalid" } };
   }
@@ -224,8 +225,8 @@ export async function updateOdometerForUser(
   if (result.count === 0) {
     return { success: false, error: { code: "notFound" } };
   }
-  await createOdometerLog(vehicleId, userId, currentOdometerKm, source, recordedAt);
-  return { success: true };
+  const log = await createOdometerLog(vehicleId, userId, currentOdometerKm, source, recordedAt, note);
+  return { success: true, logId: log.id };
 }
 
 export async function createVehicleForCurrentUser(

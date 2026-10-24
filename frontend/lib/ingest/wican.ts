@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { preferredToKm } from "@/lib/regional/distance";
 import { updateOdometerForUser } from "@/lib/services/vehicles";
+import { serialisedPerVehicle } from "@/lib/vehicles/odometer-queue";
 import type { DistanceUnit } from "@/lib/settings/types";
 
 /**
@@ -213,20 +214,8 @@ async function ingest(
 }
 
 // The adapter posts every few seconds; serialise per vehicle so overlapping
-// POSTs and the sweep never race on the same row.
-const queues = new Map<string, Promise<unknown>>();
-
-function serialised<T>(vehicleId: string, task: () => Promise<T>): Promise<T> {
-  const previous = queues.get(vehicleId) ?? Promise.resolve();
-  const run = previous.catch(() => {}).then(task);
-  queues.set(vehicleId, run);
-  void run
-    .finally(() => {
-      if (queues.get(vehicleId) === run) queues.delete(vehicleId);
-    })
-    .catch(() => {});
-  return run;
-}
+// POSTs, the sweep and the API's OBD uploads never race on the same row.
+const serialised = serialisedPerVehicle;
 
 export function ingestWicanReading(
   vehicleId: string,

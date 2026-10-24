@@ -140,6 +140,7 @@ export async function createOdometerLog(
   odometerKm: number,
   source = "manual",
   recordedAt?: Date,
+  note?: string | null,
 ) {
   return prisma.odometerLog.create({
     data: {
@@ -147,6 +148,7 @@ export async function createOdometerLog(
       odometerKm,
       source,
       recordedAt,
+      note: note?.trim() || null,
       createdByUserId: userId,
     },
   });

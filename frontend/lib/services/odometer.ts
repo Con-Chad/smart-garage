@@ -12,6 +12,8 @@ import {
 import { listAccessibleVehicles } from "@/lib/repositories/vehicles";
 import { resolveVehicleAccess } from "@/lib/vehicles/access";
 import { prisma } from "@/lib/prisma";
+import { updateOdometerForUser } from "@/lib/services/vehicles";
+import { serialisedPerVehicle } from "@/lib/vehicles/odometer-queue";
 
 export type OdometerPageData = {
   logs: SerializedOdometerLog[];
@@ -85,6 +87,64 @@ export async function logOdometerReading(input: {
   }
 
   return log.id;
+}
+
+/** `OdometerLog.source` for readings the app read from an OBD adapter (D-046). */
+export const OBD_SOURCE = "obd";
+
+/**
+ * Records a reading the app read from an OBD adapter. Unlike a manual
+ * reading it must be strictly higher than both the vehicle's current
+ * odometer and its newest log (else `ODOMETER_NOT_HIGHER`), and it is written
+ * through the web UI's quick-update path, like the WiCAN ingest (D-045).
+ * Check and write run serialised per vehicle so overlapping uploads can't
+ * both pass. Returns the new reading's id.
+ */
+export async function logObdOdometerReading(input: {
+  vehicleId: string;
+  userId: string;
+  odometerKm: number;
+  recordedAt?: Date;
+  note?: string | null;
+}): Promise<string> {
+  const access = await resolveVehicleAccess(input.userId, input.vehicleId);
+  if (!access?.canEdit) throw new Error("VEHICLE_NOT_FOUND");
+  if (!Number.isInteger(input.odometerKm) || input.odometerKm < 0) {
+    throw new Error("ODOMETER_INVALID");
+  }
+
+  return serialisedPerVehicle(input.vehicleId, async () => {
+    const [vehicle, newest] = await Promise.all([
+      prisma.vehicle.findFirst({
+        where: { id: input.vehicleId, deletedAt: null },
+        select: { currentOdometerKm: true },
+      }),
+      prisma.odometerLog.findFirst({
+        where: { vehicleId: input.vehicleId },
+        orderBy: [{ recordedAt: "desc" }, { createdAt: "desc" }],
+        select: { odometerKm: true },
+      }),
+    ]);
+    if (!vehicle) throw new Error("VEHICLE_NOT_FOUND");
+    if (input.odometerKm <= Math.max(vehicle.currentOdometerKm, newest?.odometerKm ?? 0)) {
+      throw new Error("ODOMETER_NOT_HIGHER");
+    }
+
+    const result = await updateOdometerForUser(
+      input.vehicleId,
+      input.userId,
+      input.odometerKm,
+      OBD_SOURCE,
+      input.recordedAt,
+      input.note,
+    );
+    if (!result.success || !result.logId) {
+      throw new Error(
+        result.error?.code === "mileageInvalid" ? "ODOMETER_INVALID" : "VEHICLE_NOT_FOUND",
+      );
+    }
+    return result.logId;
+  });
 }
 
 export async function deleteOdometerReading(logId: string) {

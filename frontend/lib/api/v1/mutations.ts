@@ -82,7 +82,11 @@ import {
   deleteNoteForCurrentUser,
   updateNoteForCurrentUser,
 } from "@/lib/services/notes";
-import { deleteOdometerReading, logOdometerReading } from "@/lib/services/odometer";
+import {
+  deleteOdometerReading,
+  logObdOdometerReading,
+  logOdometerReading,
+} from "@/lib/services/odometer";
 import {
   removeShareForCurrentUser,
   shareVehicleForCurrentUser,
@@ -349,12 +353,17 @@ export const deleteExpenseEntry = writeById(async (ctx, id) => {
 export const createOdometerLog = write(async (ctx) => {
   const body = await jsonBody(ctx, odometerCreateSchema);
   assertCanEditVehicle(ctx.scope, body.vehicleId);
-  const id = await logOdometerReading({
+  const reading = {
     vehicleId: body.vehicleId,
     odometerKm: body.odometerKm,
     recordedAt: body.recordedAt ? new Date(body.recordedAt) : undefined,
     note: body.note,
-  });
+  };
+  // Manual readings may be back-dated and lower; OBD ones must move forward (D-046).
+  const id =
+    body.source === "obd"
+      ? await logObdOdometerReading({ ...reading, userId: ctx.user.id })
+      : await logOdometerReading(reading);
   return respondWithResource(ctx.scope, "odometerLogs", id, 201);
 });
 

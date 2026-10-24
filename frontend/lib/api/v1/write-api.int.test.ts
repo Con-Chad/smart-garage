@@ -33,6 +33,8 @@ import { PATCH as patchCustomField } from "@/app/api/v1/custom-fields/[id]/route
 import { POST as createShare } from "@/app/api/v1/vehicles/[id]/shares/route";
 import { PATCH as patchPreferences } from "@/app/api/v1/preferences/route";
 import { PATCH as patchNotifications } from "@/app/api/v1/notification-settings/route";
+import { GET as sync } from "@/app/api/v1/sync/route";
+import { GET as listOdometer } from "@/app/api/v1/odometer/route";
 import { getFuelPageData } from "@/lib/services/fuel";
 import {
   createSchedule,
@@ -437,6 +439,95 @@ describe("API v1 write endpoints", () => {
       );
       expect(ok.status).toBe(200);
       expect(await json(ok)).toMatchObject({ eventExpenseAdded: true, pushoverConfigured: false });
+    });
+  });
+
+  describe("OBD odometer readings (D-046)", () => {
+    let obdVehicleId: string;
+    const odo = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+      createOdometer(jsonRequest("POST", "odometer", { vehicleId: obdVehicleId, ...body }, headers));
+
+    beforeAll(async () => {
+      obdVehicleId = (await createVehicleRow(owner.id, { make: "Skoda", model: "Octavia" })).id;
+      await prisma.vehicle.update({ where: { id: obdVehicleId }, data: { currentOdometerKm: 80_000 } });
+    });
+
+    it("stores a higher OBD reading through the quick-update path", async () => {
+      await as(owner.id);
+      const response = await odo({ odometerKm: 80_500, source: "obd" });
+      expect(response.status).toBe(201);
+      expect(await json(response)).toMatchObject({ vehicleId: obdVehicleId, odometerKm: 80_500, source: "obd" });
+      const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: obdVehicleId } });
+      expect(vehicle.currentOdometerKm).toBe(80_500);
+    });
+
+    it("rejects an OBD reading that is not higher with 409 odometer_not_higher", async () => {
+      await as(owner.id);
+      for (const odometerKm of [80_500, 80_499, 10]) {
+        const response = await odo({ odometerKm, source: "obd" });
+        expect(response.status).toBe(409);
+        expect((await json(response)).error.code).toBe("odometer_not_higher");
+      }
+      // Also when only the newest log is higher than the vehicle's reading.
+      await prisma.vehicle.update({ where: { id: obdVehicleId }, data: { currentOdometerKm: 70_000 } });
+      expect((await odo({ odometerKm: 75_000, source: "obd" })).status).toBe(409);
+      await prisma.vehicle.update({ where: { id: obdVehicleId }, data: { currentOdometerKm: 80_500 } });
+      expect(await prisma.odometerLog.count({ where: { vehicleId: obdVehicleId } })).toBe(1);
+    });
+
+    it("lets only one of two concurrent equal OBD readings through", async () => {
+      await as(owner.id);
+      const statuses = (await Promise.all([odo({ odometerKm: 81_000, source: "obd" }), odo({ odometerKm: 81_000, source: "obd" })]))
+        .map((r) => r.status)
+        .sort();
+      expect(statuses).toEqual([201, 409]);
+    });
+
+    it("still accepts a lower manual reading without pulling the odometer down", async () => {
+      await as(owner.id);
+      const response = await odo({ odometerKm: 60_000, recordedAt: "2025-01-01T00:00:00.000Z" });
+      expect(response.status).toBe(201);
+      expect(await json(response)).toMatchObject({ odometerKm: 60_000, source: "manual" });
+      const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: obdVehicleId } });
+      expect(vehicle.currentOdometerKm).toBe(81_000);
+    });
+
+    it("replays the original 201 for a retried OBD upload instead of a 409", async () => {
+      await as(owner.id);
+      const headers = { "idempotency-key": "outbox-obd-0001" };
+      const first = await odo({ odometerKm: 82_000, source: "obd" }, headers);
+      expect(first.status).toBe(201);
+      const retry = await odo({ odometerKm: 82_000, source: "obd" }, headers);
+      expect(retry.status).toBe(201);
+      expect(retry.headers.get("idempotent-replayed")).toBe("true");
+      expect((await json(retry)).id).toBe((await json(first)).id);
+      expect(await prisma.odometerLog.count({ where: { vehicleId: obdVehicleId, odometerKm: 82_000 } })).toBe(1);
+    });
+
+    it("rejects an unknown source with 422", async () => {
+      await as(owner.id);
+      const response = await odo({ odometerKm: 90_000, source: "wican" });
+      expect(response.status).toBe(422);
+      expect((await json(response)).error.issues.map((issue: Json) => issue.path)).toContain("source");
+    });
+
+    it("exposes source in the list and in /sync", async () => {
+      await as(owner.id);
+      const list = await json(await listOdometer(new Request(url(`odometer?vehicleId=${obdVehicleId}`))));
+      const listed = list.items;
+      expect(listed.map((row: Json) => row.source).sort()).toEqual(["manual", "obd", "obd", "obd"]);
+
+      const synced: Json[] = [];
+      let next = url("sync");
+      for (;;) {
+        const body = await json(await sync(new Request(next)));
+        synced.push(...((body.changes.odometerLogs ?? []) as Json[]).filter((row) => row.vehicleId === obdVehicleId));
+        if (!body.hasMore) break;
+        next = url(`sync?cursor=${body.cursor}`);
+      }
+      expect(synced).toHaveLength(4);
+      expect(synced.every((row: Json) => typeof row.source === "string")).toBe(true);
+      expect(synced.some((row: Json) => row.source === "obd")).toBe(true);
     });
   });
 

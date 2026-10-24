@@ -45,11 +45,16 @@ export const expenseCreateSchema = z.object({
   receiptDocumentId: id.nullable().optional(),
 });
 
+/** `OdometerLog.source` values a client may send (D-046). */
+export const ODOMETER_SOURCES = ["manual", "obd"] as const;
+
 export const odometerCreateSchema = z.object({
   vehicleId: id,
   odometerKm: km,
   recordedAt: isoDate.optional(),
   note: text(500).nullable().optional(),
+  /** "obd": read from an OBD adapter by the app; must beat the newest reading (409 otherwise). */
+  source: z.enum(ODOMETER_SOURCES).default("manual"),
 });
 
 const scheduleFields = {

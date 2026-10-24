@@ -9,6 +9,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **OBD readings from the mobile app** — `POST /api/v1/odometer` accepts
+  `source: "obd"` for readings the app takes from a Bluetooth OBD adapter.
+  They must be higher than the current odometer (409 `odometer_not_higher`
+  otherwise) and are saved through the odometer quick-update path. Manual
+  readings are unchanged (D-046).
+
 - **WiCAN OBD adapter ingest** — `POST /api/ingest/wican?vehicle=<id>` logs
   one odometer reading per trip from a WiCAN adapter — the trip's last value,
   saved once the adapter has been quiet for 30 minutes — through the same

@@ -96,6 +96,13 @@ export function writeErrorResponse(error: unknown): Response {
     if (error.message === "ODOMETER_INVALID") {
       return apiError(422, "validation_failed", "odometerKm must be a non-negative number");
     }
+    if (error.message === "ODOMETER_NOT_HIGHER") {
+      return apiError(
+        409,
+        "odometer_not_higher",
+        "An OBD reading must be higher than the vehicle's current odometer and its newest reading",
+      );
+    }
   }
   throw error;
 }

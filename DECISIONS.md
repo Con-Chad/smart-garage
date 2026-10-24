@@ -342,3 +342,19 @@ audit that motivated these lives in the parent project folder (`PHASE0-AUDIT.md`
   after that reading, and re-taken on a newer manual reading or when the
   counter drops. 204 for every accepted POST, 400 bad JSON / missing `vehicle`, 404 unknown
   or deleted vehicle, 413 over 256 KB.
+
+## OBD over BLE (app)
+
+- **D-046: OBD readings from the app.** `POST /api/v1/odometer` takes an
+  optional `source` (`"manual"` default, or `"obd"`; stored in
+  `OdometerLog.source`, no migration). Manual readings keep the old rules
+  (back-dated and lower readings allowed). An `obd` reading must be strictly
+  higher than both `currentOdometerKm` and the newest log, else 409
+  `odometer_not_higher`; adapters can report stale or reset values, and a
+  lower value must never land as "current". OBD writes go through
+  `updateOdometerForUser` (the quick-update path, now returning the log id)
+  like WiCAN, and the check + write run in the same per-vehicle in-process
+  queue as the WiCAN ingest (`lib/vehicles/odometer-queue.ts`), so the two
+  can't race each other. Idempotent replays return the stored answer. Reads
+  and `/sync` already exposed `source`. Contract: `docs/mobile/ODOMETER.md`.
+
